@@ -1,0 +1,243 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
+import {
+  api,
+  isGenerationResult,
+  jobAudioUrl,
+  type JobStatus,
+  type MusicJob,
+  type StemName,
+} from '../lib/api'
+import {
+  composeLiteraryPrompt,
+  DEFAULT_KNOBS,
+  knobsToStyleTags,
+  signalForJob,
+  signalForKnobs,
+  type LiteraryKnobs,
+} from '../lib/pixelPersonality'
+
+export type ConsoleView = 'generator' | 'ghost' | 'nova'
+
+export type ReleaseDraft = {
+  id: string
+  title: string
+  caption: string
+  jobId: string
+  audioUrl: string
+  createdAt: string
+}
+
+type StudioContextValue = {
+  view: ConsoleView
+  setView: (view: ConsoleView) => void
+  knobs: LiteraryKnobs
+  setKnob: (key: keyof LiteraryKnobs, value: number) => void
+  pixelSignal: string
+  job: MusicJob | null
+  jobStatus: JobStatus | 'idle'
+  lastAudioPath: string | null
+  lastJobId: string | null
+  lastAudioUrl: string | null
+  busy: boolean
+  error: string | null
+  releases: ReleaseDraft[]
+  generate: (input: {
+    prompt: string
+    lyrics: string
+    duration_s: number
+    bpm: number
+    key: string
+  }) => Promise<void>
+  repaint: (input: { prompt: string; start_s: number; end_s: number }) => Promise<void>
+  cover: (input: { prompt: string }) => Promise<void>
+  splitStems: (input: { prompt: string }) => Promise<void>
+  addRelease: (title: string, caption: string) => void
+}
+
+const StudioContext = createContext<StudioContextValue | null>(null)
+
+export function StudioProvider({ children }: { children: ReactNode }) {
+  const [view, setView] = useState<ConsoleView>('generator')
+  const [knobs, setKnobs] = useState<LiteraryKnobs>(DEFAULT_KNOBS)
+  const [pixelSignal, setPixelSignal] = useState('Cuida tu ruido')
+  const [job, setJob] = useState<MusicJob | null>(null)
+  const [jobStatus, setJobStatus] = useState<JobStatus | 'idle'>('idle')
+  const [lastAudioPath, setLastAudioPath] = useState<string | null>(null)
+  const [lastJobId, setLastJobId] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [releases, setReleases] = useState<ReleaseDraft[]>([])
+
+  const setKnob = useCallback((key: keyof LiteraryKnobs, value: number) => {
+    setKnobs((current) => {
+      const next = { ...current, [key]: value }
+      setPixelSignal(signalForKnobs(next))
+      return next
+    })
+  }, [])
+
+  const runJob = useCallback(async (start: () => Promise<{ job_id: string }>) => {
+    setBusy(true)
+    setError(null)
+    setJobStatus('queued')
+    setPixelSignal(signalForJob('queued'))
+    try {
+      const accepted = await start()
+      setLastJobId(accepted.job_id)
+      const finished = await api.pollJob(accepted.job_id, (tick) => {
+        setJob(tick)
+        setJobStatus(tick.status)
+        setPixelSignal(signalForJob(tick.status))
+      })
+      setJob(finished)
+      setJobStatus(finished.status)
+      if (finished.status === 'failed') {
+        setError(finished.error?.message ?? 'Job fallido')
+        return
+      }
+      if (isGenerationResult(finished.result)) {
+        setLastAudioPath(finished.result.audio_path)
+        setLastJobId(finished.job_id)
+      }
+      setPixelSignal(signalForJob(finished.status))
+    } catch (cause) {
+      setJobStatus('failed')
+      setError(cause instanceof Error ? cause.message : 'Error de red')
+      setPixelSignal(signalForJob('failed'))
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  const generate = useCallback(async (input: {
+    prompt: string
+    lyrics: string
+    duration_s: number
+    bpm: number
+    key: string
+  }) => {
+    await runJob(() => api.generate({
+      prompt: composeLiteraryPrompt(input.prompt, knobs),
+      lyrics: input.lyrics.trim() === '' ? null : input.lyrics,
+      duration_s: input.duration_s,
+      bpm: input.bpm,
+      key: input.key,
+      style_tags: knobsToStyleTags(knobs),
+      output_format: 'wav',
+    }))
+  }, [knobs, runJob])
+
+  const repaint = useCallback(async (input: { prompt: string; start_s: number; end_s: number }) => {
+    if (lastAudioPath === null) {
+      setError('Necesitas un audio fuente desde La Terminal')
+      return
+    }
+    await runJob(() => api.repaint({
+      prompt: input.prompt,
+      source_audio_path: lastAudioPath,
+      start_s: input.start_s,
+      end_s: input.end_s,
+      style_tags: knobsToStyleTags(knobs),
+      output_format: 'wav',
+    }))
+  }, [knobs, lastAudioPath, runJob])
+
+  const cover = useCallback(async (input: { prompt: string }) => {
+    if (lastAudioPath === null) {
+      setError('Necesitas un audio fuente desde La Terminal')
+      return
+    }
+    await runJob(() => api.cover({
+      prompt: input.prompt,
+      source_audio_path: lastAudioPath,
+      style_tags: knobsToStyleTags(knobs),
+      output_format: 'wav',
+    }))
+  }, [knobs, lastAudioPath, runJob])
+
+  const splitStems = useCallback(async (input: { prompt: string }) => {
+    await runJob(() => api.stems({
+      prompt: input.prompt,
+      source_audio_path: lastAudioPath,
+      style_tags: knobsToStyleTags(knobs),
+      output_format: 'wav',
+    }))
+  }, [knobs, lastAudioPath, runJob])
+
+  const addRelease = useCallback((title: string, caption: string) => {
+    if (lastJobId === null) return
+    setReleases((current) => [
+      {
+        id: `${lastJobId}-${Date.now()}`,
+        title,
+        caption,
+        jobId: lastJobId,
+        audioUrl: jobAudioUrl(lastJobId),
+        createdAt: new Date().toISOString(),
+      },
+      ...current,
+    ])
+  }, [lastJobId])
+
+  const lastAudioUrl = lastJobId === null ? null : jobAudioUrl(lastJobId)
+
+  const value = useMemo<StudioContextValue>(() => ({
+    view,
+    setView,
+    knobs,
+    setKnob,
+    pixelSignal,
+    job,
+    jobStatus,
+    lastAudioPath,
+    lastJobId,
+    lastAudioUrl,
+    busy,
+    error,
+    releases,
+    generate,
+    repaint,
+    cover,
+    splitStems,
+    addRelease,
+  }), [
+    addRelease,
+    busy,
+    cover,
+    error,
+    generate,
+    job,
+    jobStatus,
+    knobs,
+    lastAudioPath,
+    lastAudioUrl,
+    lastJobId,
+    pixelSignal,
+    releases,
+    repaint,
+    setKnob,
+    splitStems,
+    view,
+  ])
+
+  return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>
+}
+
+export function useStudio(): StudioContextValue {
+  const context = useContext(StudioContext)
+  if (context === null) {
+    throw new Error('useStudio must be used within StudioProvider')
+  }
+  return context
+}
+
+export function stemUrl(jobId: string, stem: StemName): string {
+  return jobAudioUrl(jobId, stem)
+}

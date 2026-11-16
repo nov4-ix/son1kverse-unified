@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @son1k/api dev",
+    "web:dev": "pnpm --filter @son1k/web dev",
     "typecheck": "pnpm --filter @son1k/db prisma:generate && pnpm -r exec tsc --noEmit",
     "build": "pnpm -r build",
     "db:validate": "pnpm --filter @son1k/db prisma:validate",

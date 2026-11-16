@@ -1,4 +1,4 @@
-.PHONY: setup dev typecheck build db-validate db-generate lab-setup lab-dev lab-test lab-openapi lab-docker-gpu
+.PHONY: setup dev typecheck build db-validate db-generate lab-setup lab-dev lab-test lab-openapi lab-docker-gpu web-dev
 
 setup:
 pnpm install
@@ -32,4 +32,7 @@ lab-openapi:
 cd services/music-lab && .venv/bin/python scripts/export_openapi.py
 
 lab-docker-gpu:
-cd services/music-lab && docker build -f Dockerfile.gpu -t son1kverse/music-lab:gpu .
+	cd services/music-lab && docker build -f Dockerfile.gpu -t son1kverse/music-lab:gpu .
+
+web-dev:
+	pnpm --filter @son1k/web dev

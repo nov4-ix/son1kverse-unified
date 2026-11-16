@@ -82,4 +82,60 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       user: { id: user.id, email: user.email, alias: user.alias },
     }))
   })
+
+  app.get('/auth/me', async (req, reply) => {
+    try {
+      await req.jwtVerify()
+    } catch {
+      return reply.status(401).send({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Bearer JWT requerido' },
+      })
+    }
+
+    const claims = req.user
+    const userId = typeof claims === 'object' && claims !== null && 'sub' in claims
+      ? claims.sub
+      : undefined
+    if (typeof userId !== 'string' || userId === '') {
+      return reply.status(401).send({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Token sin sujeto' },
+      })
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { alvaeAccount: true },
+    })
+    if (user === null) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Usuario no encontrado' },
+      })
+    }
+
+    return reply.status(200).send(successResponse({
+      user: {
+        id: user.id,
+        email: user.email,
+        alias: user.alias,
+        generationsUsedThisMonth: user.generationsUsedThisMonth,
+        generationsLimit: user.generationsLimit,
+        storageUsedBytes: Number(user.storageUsedBytes),
+        storageLimit: Number(user.storageLimit),
+        subscriptionTier: user.subscriptionTier,
+      },
+      alvaeAccount: user.alvaeAccount === null
+        ? null
+        : {
+            role: user.alvaeAccount.role,
+            tier: user.alvaeAccount.tier,
+            alvaeSymbol: user.alvaeAccount.alvaeSymbol,
+            alvaeColor: user.alvaeAccount.alvaeColor,
+            permissions: user.alvaeAccount.permissions,
+            isBlindado: user.alvaeAccount.isBlindado,
+          },
+    }))
+  })
 }

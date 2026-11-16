@@ -239,3 +239,41 @@ Fuentes de solo lectura:
 - **Docker**: no se pudo ejecutar `docker build --check` en este entorno
   (Docker no está instalado). Los Dockerfiles quedan escritos y sujetos a
   validación en un host con Docker.
+
+## 7. Fase 3 — Frontend unificado (`apps/web` + `packages/shared-ui`)
+
+Rama: `feat/unified-ui`
+
+Fuentes de solo lectura:
+- `/home/openclaw/genome2/son1kvers3` (`apps/web-classic`, `apps/the-generator`, `apps/ghost-studio`, `apps/nova-post-pilot`, `packages/shared-ui`, `packages/shared-types`)
+- Lore y contratos: `docs/DESIGN_LORE.md`, `services/music-lab/openapi.json`, `apps/api/src/api/routes/music.ts`
+
+### 7.1. Qué se creó
+
+| Destino | Tratamiento |
+|---|---|
+| `packages/shared-ui` (`@son1k/shared-ui`) | Paquete nuevo. Iconos oficiales SVG (`PlatformLogo`, `AlvaeSymbol`) y perilla literaria táctil. Sin Suno ni Supabase. |
+| `apps/web` (`@son1k/web`) | App Vite + React 18 + Tailwind. Landing XentriX y consola ALVAE. |
+| `apps/web/src/context/SystemModeContext.tsx` | Estado persistente `'xentrix' \| 'alvae'`, `Ctrl+Alt+H`, pulsación 1.5s y transición 1.2s. |
+| `apps/web/src/lib/api.ts` | Cliente tipado contra `apps/api`: `POST /api/v1/music/generate` (ruta Fastify `/music/generate`), polling `queued → running → succeeded/failed`, WAV en `/api/v1/music/jobs/:id/audio`. |
+| `apps/web/src/lib/pixelPersonality.ts` | Señales breves de Pixel (sin emojis, sin chatbot) alineadas a `apps/api/src/core/pixel/pixelPersonality.ts`. |
+| `apps/web/src/views/GeneratorView.tsx` | La Terminal: prompt, duración/BPM/tonalidad, 4 perillas + Quinto Acorde. |
+| `apps/web/src/views/GhostStudioView.tsx` | Onda con cicatrices doradas, `repaint` (`start_s`/`end_s`), `cover`, `stems`. |
+| `apps/web/src/views/AlvaeProfileView.tsx` | Credencial ALVAE + Nova Post Pilot anclado al último job real. |
+| `apps/api/src/api/routes/music.ts` | Se expusieron `POST /music/repaint`, `/music/cover` y `/music/stems` para Ghost Studio. |
+| `apps/api/src/api/routes/auth.ts` | `GET /auth/me` para alias, cuotas y `AlvaeAccount` si existe. |
+| `Makefile` | Target `web-dev`. |
+
+### 7.2. Qué se descartó
+
+- Cualquier cliente `suno` o `supabase`.
+- Chatbot flotante de Pixel. Pixel queda como barra nerviosa en el borde izquierdo.
+- Copia literal de las apps Next/Vite de `son1kvers3` (dependencias rotas, emojis, 6 perillas, voice cloning). Se reimplementó el contrato de UI del lore: 4 perillas + quinto acorde.
+
+### 7.3. Decisiones de diseño
+
+- Dualidad estricta de símbolos: triángulo+ojo = plataforma; círculo abierto+rayo = ALVAE.
+- El proxy de Vite apunta a `http://localhost:3001` para `/api`, `/music` y `/health`. El cliente usa las rutas reales prefijadas `/api/v1/...`.
+- Ghost Studio no inventa audio: el `source_audio_path` sale de `result.audio_path` del último job `succeeded`.
+- Nova Post Pilot no llama a un CRUD inexistente: registra lanzamientos locales sobre el WAV real del job.
+- Si el usuario no tiene fila `AlvaeAccount`, la credencial lo declara (`sin credencial`) en lugar de fabricar un tier.

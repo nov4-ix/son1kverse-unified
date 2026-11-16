@@ -26,6 +26,22 @@ const MusicLabGenerateSchema = z.object({
   engine:               z.enum(['simulation', 'ace-step', 'heartmula']).nullable().optional(),
 })
 
+const MusicLabRepaintSchema = MusicLabGenerateSchema.extend({
+  source_audio_path: z.string().min(1),
+  start_s:           z.number().min(0),
+  end_s:             z.number().gt(0),
+}).refine((value) => value.start_s < value.end_s, {
+  message: 'start_s debe ser menor que end_s',
+})
+
+const MusicLabCoverSchema = MusicLabGenerateSchema.extend({
+  source_audio_path: z.string().min(1),
+})
+
+const MusicLabStemsSchema = MusicLabGenerateSchema.extend({
+  source_audio_path: z.string().nullable().optional(),
+})
+
 const JobParamsSchema = z.object({
   jobId: z.string().min(1),
 })
@@ -49,6 +65,57 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       const job = await musicLabClient.generate(parsed.data)
+      const jobId = encodeURIComponent(job.job_id)
+      return reply.status(202).send(successResponse({
+        ...job,
+        job_url:   `/api/v1/music/jobs/${jobId}`,
+        audio_url: `/api/v1/music/jobs/${jobId}/audio`,
+      }))
+    } catch (error) {
+      rethrowUpstream(error)
+    }
+  })
+
+  app.post('/music/repaint', async (req, reply) => {
+    const parsed = MusicLabRepaintSchema.safeParse(req.body)
+    if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+
+    try {
+      const job = await musicLabClient.repaint(parsed.data)
+      const jobId = encodeURIComponent(job.job_id)
+      return reply.status(202).send(successResponse({
+        ...job,
+        job_url:   `/api/v1/music/jobs/${jobId}`,
+        audio_url: `/api/v1/music/jobs/${jobId}/audio`,
+      }))
+    } catch (error) {
+      rethrowUpstream(error)
+    }
+  })
+
+  app.post('/music/cover', async (req, reply) => {
+    const parsed = MusicLabCoverSchema.safeParse(req.body)
+    if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+
+    try {
+      const job = await musicLabClient.cover(parsed.data)
+      const jobId = encodeURIComponent(job.job_id)
+      return reply.status(202).send(successResponse({
+        ...job,
+        job_url:   `/api/v1/music/jobs/${jobId}`,
+        audio_url: `/api/v1/music/jobs/${jobId}/audio`,
+      }))
+    } catch (error) {
+      rethrowUpstream(error)
+    }
+  })
+
+  app.post('/music/stems', async (req, reply) => {
+    const parsed = MusicLabStemsSchema.safeParse(req.body)
+    if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+
+    try {
+      const job = await musicLabClient.stems(parsed.data)
       const jobId = encodeURIComponent(job.job_id)
       return reply.status(202).send(successResponse({
         ...job,
