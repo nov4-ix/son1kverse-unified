@@ -50,3 +50,7 @@ class AudioGeneratorInterface(ABC):
     @abstractmethod
     async def capabilities(self) -> set[str]:
         """Return the operations this adapter can actually perform."""
+
+    async def close(self) -> None:
+        """Release loaded resources. Adapters may override this hook."""
+        return None

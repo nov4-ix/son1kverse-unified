@@ -39,12 +39,17 @@ class Settings(BaseSettings):
     ace_step_dtype: str = "bfloat16"
     ace_step_offload: bool = False
     ace_step_python_module: str = "acestep"
+    ace_step_api_verified: bool = False
 
     heartmula_ckpt_dir: Path = Path("/models/heartmula")
     heartmula_version: str = "3B"
     heartmula_device: str = "cuda"
+    heartmula_dtype: str = "bfloat16"
     heartmula_lazy_load: bool = True
     heartmula_python_module: str = "heartlib"
+    heartmula_temperature: float = 1.0
+    heartmula_topk: int = 50
+    heartmula_cfg_scale: float = 1.5
 
     def ensure_output_dir(self) -> Path:
         self.music_lab_output_dir.mkdir(parents=True, exist_ok=True)
