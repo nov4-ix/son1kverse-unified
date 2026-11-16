@@ -1,152 +1,65 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
-export type SystemMode = 'xentrix' | 'alvae'
-export type ProtocolLabel = 'ctrl+alt=Security' | 'ctrl+ALT=humanity'
+export type SystemMode = 'xentrix' | 'alvae';
 
-const STORAGE_KEY = 'son1k.systemMode'
-const TRANSITION_MS = 1200
-const HOLD_MS = 1500
-
-type SystemModeContextValue = {
-  mode: SystemMode
-  protocol: ProtocolLabel
-  displayedProtocol: string
-  transitioning: boolean
-  toggleMode: () => void
-  beginHold: () => void
-  endHold: () => void
+interface SystemModeContextValue {
+  mode: SystemMode;
+  isTransitioning: boolean;
+  targetMode: SystemMode;
+  toggleMode: () => void;
+  setMode: (next: SystemMode) => void;
 }
 
-const SystemModeContext = createContext<SystemModeContextValue | null>(null)
+const SystemModeContext = createContext<SystemModeContextValue | null>(null);
+const STORAGE_KEY = 'son1k_system_mode';
 
-function protocolFor(mode: SystemMode): ProtocolLabel {
-  return mode === 'alvae' ? 'ctrl+ALT=humanity' : 'ctrl+alt=Security'
-}
+export const SystemModeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [mode, setModeState] = useState<SystemMode>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved === 'alvae' ? 'alvae' : 'xentrix';
+  });
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [targetMode, setTargetMode] = useState<SystemMode>(mode);
 
-function readStoredMode(): SystemMode {
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
-    return stored === 'alvae' ? 'alvae' : 'xentrix'
-  } catch {
-    return 'xentrix'
-  }
-}
+  const triggerTransition = useCallback((next: SystemMode) => {
+    if (isTransitioning || next === mode) return;
+    setTargetMode(next);
+    setIsTransitioning(true);
 
-function rewriteProtocol(from: string, to: string, progress: number): string {
-  const width = Math.max(from.length, to.length)
-  const paddedFrom = from.padEnd(width, ' ')
-  const paddedTo = to.padEnd(width, ' ')
-  const replaced = Math.round(progress * width)
-  const chars: string[] = []
-  for (let index = 0; index < width; index += 1) {
-    const fromRight = width - 1 - index
-    chars[fromRight] = index < replaced
-      ? (paddedTo[fromRight] ?? ' ')
-      : (paddedFrom[fromRight] ?? ' ')
-  }
-  return chars.join('').trimEnd()
-}
+    setTimeout(() => {
+      setModeState(next);
+      localStorage.setItem(STORAGE_KEY, next);
+    }, 750);
 
-export function SystemModeProvider({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<SystemMode>('xentrix')
-  const [displayedProtocol, setDisplayedProtocol] = useState<string>(protocolFor('xentrix'))
-  const [transitioning, setTransitioning] = useState(false)
-  const lockRef = useRef(false)
-  const holdRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    const stored = readStoredMode()
-    setMode(stored)
-    setDisplayedProtocol(protocolFor(stored))
-  }, [])
+    setTimeout(() => {
+      setIsTransitioning(false);
+    }, 1500);
+  }, [isTransitioning, mode]);
 
   const toggleMode = useCallback(() => {
-    if (lockRef.current) return
-    lockRef.current = true
-    setTransitioning(true)
-
-    const fromMode = mode
-    const toMode: SystemMode = fromMode === 'xentrix' ? 'alvae' : 'xentrix'
-    const fromProtocol = protocolFor(fromMode)
-    const toProtocol = protocolFor(toMode)
-    const started = performance.now()
-
-    const tick = (now: number) => {
-      const progress = Math.min(1, (now - started) / TRANSITION_MS)
-      setDisplayedProtocol(rewriteProtocol(fromProtocol, toProtocol, progress))
-      if (progress < 1) {
-        window.requestAnimationFrame(tick)
-        return
-      }
-      setMode(toMode)
-      setDisplayedProtocol(toProtocol)
-      setTransitioning(false)
-      lockRef.current = false
-      try {
-        window.localStorage.setItem(STORAGE_KEY, toMode)
-      } catch {
-        /* persistencia opcional */
-      }
-    }
-
-    window.requestAnimationFrame(tick)
-  }, [mode])
+    triggerTransition(mode === 'xentrix' ? 'alvae' : 'xentrix');
+  }, [mode, triggerTransition]);
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === 'h') {
-        event.preventDefault()
-        toggleMode()
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        toggleMode();
       }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [toggleMode])
-
-  const beginHold = useCallback(() => {
-    if (holdRef.current !== null) return
-    holdRef.current = window.setTimeout(() => {
-      holdRef.current = null
-      toggleMode()
-    }, HOLD_MS)
-  }, [toggleMode])
-
-  const endHold = useCallback(() => {
-    if (holdRef.current === null) return
-    window.clearTimeout(holdRef.current)
-    holdRef.current = null
-  }, [])
-
-  const value = useMemo<SystemModeContextValue>(() => ({
-    mode,
-    protocol: protocolFor(mode),
-    displayedProtocol,
-    transitioning,
-    toggleMode,
-    beginHold,
-    endHold,
-  }), [beginHold, displayedProtocol, endHold, mode, toggleMode, transitioning])
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleMode]);
 
   return (
-    <SystemModeContext.Provider value={value}>
+    <SystemModeContext.Provider value={{ mode, isTransitioning, targetMode, toggleMode, setMode: triggerTransition }}>
       {children}
     </SystemModeContext.Provider>
-  )
-}
+  );
+};
 
-export function useSystemMode(): SystemModeContextValue {
-  const context = useContext(SystemModeContext)
-  if (context === null) {
-    throw new Error('useSystemMode must be used within SystemModeProvider')
-  }
-  return context
-}
+export const useSystemMode = (): SystemModeContextValue => {
+  const ctx = useContext(SystemModeContext);
+  if (!ctx) throw new Error('useSystemMode debe usarse dentro de SystemModeProvider');
+  return ctx;
+};
