@@ -1,0 +1,29 @@
+{
+  "name": "@son1k/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "postinstall": "prisma generate",
+    "prisma:validate": "DATABASE_URL=${DATABASE_URL:-postgresql://son1kverse:son1kverse@localhost:5432/son1kverse?schema=public} prisma validate",
+    "prisma:generate": "prisma generate",
+    "prisma:format": "prisma format"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "prisma": "^5.10.0",
+    "typescript": "^5.3.3"
+  }
+}
