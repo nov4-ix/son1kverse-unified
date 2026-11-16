@@ -1,0 +1,63 @@
+# ─── SON1KVERSE Audio Engine — Dockerfile para GPU en la nube ───
+# Soporta RunPod, Lambda Labs, Vast.ai, Google Colab Pro, etc.
+# 
+# Uso:
+#   docker build -t son1kverse-audio-engine .
+#   docker run --gpus all -p 8001:8001 -e HEARTMULA_AUTO_DOWNLOAD=1 son1kverse-audio-engine
+#
+# O con docker-compose:
+#   docker-compose up --build
+
+FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
+
+# Evitar interactividad en apt
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Variables de entorno del motor
+ENV HEARTMULA_CKPT_DIR=/app/ckpt
+ENV HEARTMULA_VERSION=3B
+ENV HEARTMULA_AUTO_DOWNLOAD=1
+ENV HEARTMULA_LAZY_LOAD=1
+ENV HEARTMULA_MULA_DTYPE=bfloat16
+ENV HEARTMULA_CODEC_DTYPE=float32
+ENV AUDIO_ENGINE_HOST=0.0.0.0
+ENV AUDIO_ENGINE_PORT=8001
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Instalar dependencias del sistema
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3-pip \
+    python3-dev \
+    git \
+    wget \
+    curl \
+    ffmpeg \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Crear directorio de la aplicación
+WORKDIR /app
+
+# Copiar requirements primero para aprovechar caché de Docker
+COPY audio_engine/requirements.txt ./requirements.txt
+
+# Instalar PyTorch con soporte CUDA 12.1 (crítico para GPU en la nube)
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir torch==2.4.0 torchaudio==2.4.0 torchvision==0.19.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Instalar resto de dependencias
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copiar todo el código del audio engine
+COPY audio_engine/ ./audio_engine/
+
+# Exponer puerto del motor
+EXPOSE 8001
+
+# Comando de entrada
+CMD ["python3", "audio_engine/main.py"]

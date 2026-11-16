@@ -1,0 +1,31 @@
+node_modules/
+dist/
+.env
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+.turbo/
+.prisma/
+coverage/
+*.log
+
+# Seguridad — nunca subir esto
+.env.local
+.env.production
+**/cookies/
+**/*.key
+
+# ─── Motor de audio: pesos y entorno (≈23 GB) — jamás al repo ────────────────
+audio_engine/venv/
+audio_engine/ckpt/
+audio_engine/outputs/
+audio_engine/**/__pycache__/
+*.safetensors
+
+# ─── Artefactos locales ───────────────────────────────────────────────────────
+output/
+son1kverse_ext/
+*.zip
+.node/
+.opencode/ 
