@@ -10,6 +10,7 @@ import { authRoutes } from './routes/auth.js'
 import { orchestrateRoutes } from './routes/orchestrate.js'
 import { profileRoutes } from './routes/profile.js'
 import { memoryRoutes } from './routes/memory.js'
+import { musicRoutes } from './routes/music.js'
 
 export async function buildServer() {
   const app = Fastify({
@@ -71,6 +72,7 @@ export async function buildServer() {
   await app.register(orchestrateRoutes, { prefix: '/api/v1' })
   await app.register(profileRoutes,     { prefix: '/api/v1' })
   await app.register(memoryRoutes,      { prefix: '/api/v1' })
+  await app.register(musicRoutes,       { prefix: '/api/v1' })
 
   return app
 }
