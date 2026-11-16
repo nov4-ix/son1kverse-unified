@@ -1,0 +1,17 @@
+{
+  "name": "son1kverse-unified",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @son1k/api dev",
+    "typecheck": "pnpm --filter @son1k/db prisma:generate && pnpm -r exec tsc --noEmit",
+    "build": "pnpm -r build",
+    "db:validate": "pnpm --filter @son1k/db prisma:validate",
+    "db:generate": "pnpm --filter @son1k/db prisma:generate"
+  }
+}
