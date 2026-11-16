@@ -96,7 +96,7 @@ async function fetchWithRetry(
       }
 
       return res
-    } catch (err: any) {
+    } catch (err) {
       lastError = err
 
       // Si es el último intento, lanzamos
@@ -205,7 +205,7 @@ export class AudioEngineClient {
           throw new Error(`Generación fallida para track ${trackId}: ${job.error ?? 'Error desconocido'}`)
         }
         // status === 'queued' o 'processing': seguir esperando
-      } catch (err: any) {
+      } catch (err) {
         // Si el engine está caído, seguimos intentando hasta agotar maxWaitMs
         console.warn(
           `[AudioEngineClient] waitForCompletion(${trackId}) error (reintentando): ${err instanceof Error ? err.message : String(err)}`,

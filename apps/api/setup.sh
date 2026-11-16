@@ -1,50 +1,42 @@
 #!/usr/bin/env bash
-# ─── SON1KVERSE — Setup en Ubuntu ────────────────────────────────────────────
 set -e
 
-echo ""
-echo "⬡  SON1KVERSE — Setup"
-echo "─────────────────────────────────────────────────────"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
 
-# Node.js 20+ requerido
-if ! command -v node &> /dev/null; then
-  echo "⚠  Node.js no encontrado. Instalando via nvm..."
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-  export NVM_DIR="$HOME/.nvm"
-  # shellcheck disable=SC1091
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-  nvm install 20
-  nvm use 20
+echo ""
+echo "SON1KVERSE - Setup"
+echo "----------------------------------------"
+
+if ! command -v node > /dev/null; then
+  echo "Node.js 20+ es requerido."
+  exit 1
 fi
 
-echo "✓ Node $(node -v)"
+echo "Node $(node -v)"
 
-# Dependencias
-echo "→ Instalando dependencias..."
-npm install
+if ! command -v pnpm > /dev/null; then
+  echo "pnpm 9 es requerido. Instala con: corepack enable && corepack prepare pnpm@9.15.9 --activate"
+  exit 1
+fi
 
-# .env
+echo "Instalando dependencias..."
+pnpm install
+
 if [ ! -f .env ]; then
   cp .env.example .env
-  echo ""
-  echo "⚠  Creado .env desde .env.example"
-  echo "⚠  IMPORTANTE: Edita .env y configura:"
-  echo "     JWT_SECRET=<genera con: openssl rand -base64 64>"
-  echo "     OPENROUTER_API_KEY=<tu key de openrouter.ai>"
-  echo ""
+  echo "Creado .env desde .env.example"
 fi
 
-# Prisma
-echo "→ Generando cliente Prisma..."
-npx prisma generate
+if [ ! -f apps/api/.env ]; then
+  cp apps/api/.env.example apps/api/.env
+  echo "Creado apps/api/.env desde apps/api/.env.example"
+fi
 
-echo "→ Creando base de datos SQLite..."
-npx prisma db push
+echo "Generando cliente Prisma..."
+pnpm db:generate
 
 echo ""
-echo "✓ Setup completo."
-echo ""
-echo "Para arrancar:"
-echo "  npm run dev"
-echo ""
-echo "⬡  PIXEL listo para orquestar."
+echo "Setup completo."
+echo "Edita .env y apps/api/.env con JWT_SECRET y OPENROUTER_API_KEY."
+echo "Para arrancar: pnpm dev"

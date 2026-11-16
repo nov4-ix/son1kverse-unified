@@ -58,13 +58,19 @@ export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
           sessionId,
           options,
           externalTrackId: trackId,
-        } as any)
+        })
 
-        const content = result?.content as any
+        const content = typeof result.content === 'object' && result.content !== null
+          ? result.content
+          : {}
         coherentJobStore.get(trackId)!.status = 'done'
-        coherentJobStore.get(trackId)!.downloadUrl = content?.download_url ?? `/api/v1/audio/download/${encodeURIComponent(trackId)}`
-        coherentJobStore.get(trackId)!.fragments = content?.fragments
-      } catch (err: any) {
+        coherentJobStore.get(trackId)!.downloadUrl = typeof content.download_url === 'string'
+          ? content.download_url
+          : `/api/v1/audio/download/${encodeURIComponent(trackId)}`
+        coherentJobStore.get(trackId)!.fragments = typeof content.fragments === 'number'
+          ? content.fragments
+          : undefined
+      } catch (err) {
         coherentJobStore.get(trackId)!.status = 'error'
         coherentJobStore.get(trackId)!.error = err instanceof Error ? err.message : String(err)
         console.error(`[Coherent] Job ${trackId} falló:`, err)

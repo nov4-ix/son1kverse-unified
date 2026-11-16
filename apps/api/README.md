@@ -17,24 +17,23 @@ El producto central es **PIXEL** — un director creativo IA que analiza context
 
 ---
 
-## Setup rápido (Ubuntu)
+## Setup rápido (Ubuntu, monorepo)
 
 ```bash
-git clone https://github.com/nov4-ix/son1kverse.git
-cd son1kverse
-chmod +x setup.sh
-./setup.sh
+pnpm install
+pnpm db:generate
 ```
 
-Edita `.env`:
+Copia `.env.example` a `.env` y `apps/api/.env.example` a `apps/api/.env`.
+Edita ambos con:
 ```bash
 JWT_SECRET=$(openssl rand -base64 64)
 OPENROUTER_API_KEY=tu_key_aqui
 ```
 
-Arranca:
+Arranca desde la raíz:
 ```bash
-npm run dev
+pnpm dev
 ```
 
 ---
@@ -53,7 +52,7 @@ Usuario → Perfil Artístico → Memoria → Análisis
 
 - **Runtime**: Node.js 20 + TypeScript ESM
 - **API**: Fastify + Zod
-- **ORM**: Prisma + SQLite (→ Postgres en producción)
+- **ORM**: Prisma + PostgreSQL
 - **Providers**: OpenRouter, Ollama (local)
 - **Testing**: Vitest
 
