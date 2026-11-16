@@ -21,6 +21,7 @@ import type { FeedbackDTO } from '../core/contracts.js'
 import { AgentType, ArtifactType, MemoryType, ProviderType } from '../core/types.js'
 import { ProfileNotFoundError } from '../core/errors.js'
 import { eventBus, SystemEvent } from '../core/events.js'
+import { selectPixelTone } from '../core/pixel/pixelPersonality.js'
 import { AnalysisService } from '../analysis/AnalysisService.js'
 import { IdentityService } from '../identity/IdentityService.js'
 import { MemoryService } from '../memory/MemoryService.js'
@@ -107,6 +108,8 @@ export class Pixel implements IOrchestrator {
       // Aplicar overrides si el usuario los especificó
       if (options?.forceAgent)  intent.type = options.forceAgent
 
+      const personality = selectPixelTone(intent)
+
       // ─── 4. Seleccionar agente + provider vía Router ─────────────────────
       const { agent, provider, model } = this.router.route(intent)
 
@@ -122,6 +125,7 @@ export class Pixel implements IOrchestrator {
         providerType: finalProvider.type as ProviderType,
         model:        finalModel,
         intent,
+        personality:  personality.moodId,
       })
 
       // ─── 5. Ejecutar agente con contexto completo ─────────────────────────
@@ -130,6 +134,7 @@ export class Pixel implements IOrchestrator {
         profile,
         memories,
         sessionId,
+        personality,
         provider: finalProvider,
         model:    finalModel,
       })
@@ -356,6 +361,7 @@ export class Pixel implements IOrchestrator {
 
       if (options?.forceAgent)  intent.type = options.forceAgent
 
+      const personality = selectPixelTone(intent)
       const { agent, provider, model } = this.router.route(intent)
       const finalProvider = options?.forceProvider
         ? this.router.getProvider(options.forceProvider) ?? provider
@@ -365,12 +371,13 @@ export class Pixel implements IOrchestrator {
       eventBus.emit(SystemEvent.AGENT_SELECTED, {
         sessionId, agentType: agent.type as AgentType,
         providerType: finalProvider.type as ProviderType, model: finalModel, intent,
+        personality: personality.moodId,
       })
 
       // ─── 2. Contenido musical del agente (género, mood, estructura…) ───
       // Si el agente falla (p. ej. OPENROUTER_API_KEY no configurada),
       // usamos valores por defecto para seguir con la orquesta de coherencia.
-      let result: any = {
+      let result: CreativeResult = {
         id: crypto.randomUUID(),
         profileId,
         sessionId,
@@ -386,7 +393,7 @@ export class Pixel implements IOrchestrator {
       let musical: Record<string, unknown> = {}
       try {
         const agentResult = await agent.execute({
-          intent, profile, memories, sessionId,
+          intent, profile, memories, sessionId, personality,
           provider: finalProvider, model: finalModel,
         })
         musical = (typeof agentResult.content === 'object' && agentResult.content !== null)

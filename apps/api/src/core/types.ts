@@ -61,6 +61,19 @@ export enum SessionStatus {
   ABANDONED = 'abandoned',
 }
 
+// ─── Pixel Personality ───────────────────────────────────────────────────────
+
+export type PixelMoodId = 'casual-technical' | 'poetic' | 'motivational' | 'rebellious'
+
+export type PixelTone = {
+  moodId:      PixelMoodId
+  moodName:    string
+  tone:        string
+  style:       string
+  direction:   string
+  temperature: number
+}
+
 // ─── Domain Types ─────────────────────────────────────────────────────────────
 
 export type BpmRange = {
@@ -154,12 +167,13 @@ export type CreativeResult = {
 // ─── Agent Context — Lo que recibe cada agente al ejecutarse ─────────────────
 
 export type AgentContext = {
-  intent:     CreativeIntent
-  profile:    ArtistProfile
-  memories:   MemoryEntry[]
-  sessionId:  string
-  provider?:  unknown
-  model?:     string | undefined
+  intent:      CreativeIntent
+  profile:     ArtistProfile
+  memories:    MemoryEntry[]
+  sessionId:   string
+  personality?: PixelTone | undefined
+  provider?:   unknown
+  model?:      string | undefined
 }
 
 // ─── Feedback ─────────────────────────────────────────────────────────────────

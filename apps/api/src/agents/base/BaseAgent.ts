@@ -4,6 +4,7 @@ import type { IAgent, IProvider } from '../../core/interfaces.js'
 import type { AgentContext, ArtistProfile, CreativeResult, CreativeIntent } from '../../core/types.js'
 import { AgentExecutionError } from '../../core/errors.js'
 import { eventBus, SystemEvent } from '../../core/events.js'
+import { buildPixelPersonalityPrompt, selectPixelTone } from '../../core/pixel/pixelPersonality.js'
 import { randomUUID } from 'crypto'
 
 export abstract class BaseAgent implements IAgent {
@@ -22,13 +23,14 @@ export abstract class BaseAgent implements IAgent {
     const start = Date.now()
 
     try {
-      const systemPrompt = this.buildSystemPrompt(profile)
+      const personality = context.personality ?? selectPixelTone(context.intent)
+      const systemPrompt = `${this.buildSystemPrompt(profile)}\n\n${buildPixelPersonalityPrompt(personality)}`
       const userPrompt   = this.buildUserPrompt(context)
       const activeProvider = (context.provider as IProvider | undefined) ?? this.provider
 
       const raw = await activeProvider.complete(userPrompt, {
         systemPrompt,
-        temperature: 0.85,
+        temperature: personality.temperature,
         maxTokens:   1200,
         model:       context.model,
       })

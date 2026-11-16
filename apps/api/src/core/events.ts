@@ -1,6 +1,6 @@
 // ─── SON1KVERSE — Event Bus ───────────────────────────────────────────────────
 
-import type { AgentType, ArtistProfile, CreativeIntent, CreativeResult, ProviderType } from './types.js'
+import type { AgentType, ArtistProfile, CreativeIntent, CreativeResult, PixelMoodId, ProviderType } from './types.js'
 
 export enum SystemEvent {
   ORCHESTRATION_STARTED   = 'orchestration:started',
@@ -51,6 +51,7 @@ export type AgentSelectedPayload = {
   providerType: ProviderType
   model:        string
   intent:       CreativeIntent
+  personality?: PixelMoodId | undefined
 }
 
 export type MemorySavedPayload = {
