@@ -174,3 +174,68 @@ Limitación: Node activo `v26.13.1`; no hay Node 20 instalado en este entorno. E
 - Migrar campos JSON de `String` a `Json` nativo.
 - Evaluar si la personalidad debe influir también en la selección de modelo.
 - Añadir migraciones SQL versionadas de Prisma para PostgreSQL.
+
+## 6. Music Lab (`services/music-lab`)
+
+Rama: `feat/music-lab`
+
+Fuentes de solo lectura:
+- `/home/openclaw/genome2/son1k-heart` — HAM (Harmonic Alignment Module) y `post_processing/mastering_chain.py`.
+- `/home/openclaw/genome2/son1kvers3/music-lab` — copia de referencia del pipeline musical.
+- `/home/openclaw/genome2/son1kverse-unified/apps/api/audio_engine` — implementación local de referencia para la API de HeartMuLa.
+
+### 6.1. Qué se portó
+
+| Origen | Destino | Tratamiento |
+|---|---|---|
+| `alignment/key_detection.py`, `key_detection_v2.py` | `app/ham/key.py` | Detección de tonalidad por chroma FFT + perfiles mayor/menor. Se eliminó `librosa`. |
+| `alignment/bpm_detection.py` | `app/ham/bpm.py` | Envolvente de onsets + autocorrelación FFT. Se eliminó `librosa.beat`. |
+| `alignment/energy_profile.py` | `app/ham/energy.py` | RMS, normalización, fades, soft clip. |
+| `alignment/spectral_match.py` | `app/ham/spectral.py` | Centroide/perfil espectral y ajuste por shelf FFT. |
+| `alignment/stitcher.py` | `app/ham/stitcher.py` | Crossfade, concatenación, trim y padding. |
+| `alignment/harmonic_alignment.py` | `app/ham/engine.py` | `HarmonicAligner` con análisis y alineación de energía/espectro. |
+| `post_processing/mastering_chain.py` | `app/mastering/chain.py` | Normalización tipo LUFS, EQ ligera, limiter true-peak y fades. |
+
+### 6.2. Qué se descartó
+
+- `pyloudnorm`: la normalización LUFS se reimplementó con K-weighting aproximado
+  (scipy) y gating por bloques. No es una certificación BS.1770; es una
+  aproximación documentada y determinista.
+- Compresor multibanda y stereo enhancer del MasteringChain original: no son
+  necesarios para el contrato del Music Lab. Se conservan en la fuente.
+- Pitch shift y time stretch de HAM: dependían de `librosa`. `HarmonicAligner`
+  los detecta y reporta como warnings, pero no altera el audio.
+- Detección de acordes y variantes v2 no esenciales: quedan fuera de este
+  port para mantener el servicio liviano.
+- `workers/`, Celery/Redis, cache middleware, voice cloning, remix y servicios
+  de análisis del repo de origen: no forman parte del alcance del Music Lab.
+- Cualquier proveedor externo de generación (incluido Suno): eliminado del
+  monorepo. El Music Lab sólo habla con adaptadores locales.
+
+### 6.3. Decisiones conservadoras
+
+- **CPU por defecto**: `MUSIC_LAB_MODE=simulation` y las dependencias base no
+  incluyen torch, transformers, ACE-Step ni HeartMuLa.
+- **ACE-Step**: no se pudo verificar la API pública de inferencia en las fuentes
+  locales. La carga/validación está lista, pero `_run_inference` lanza 501 con
+  `code=ACE_STEP_API_UNVERIFIED` y `health()` mantiene `ready=false` hasta que
+  `ACE_STEP_API_VERIFIED=true`. Ver `TODO(verify-api)`.
+- **HeartMuLa**: sólo `generate`; se confirmó el uso de
+  `heartlib.HeartMuLaGenPipeline` leyendo `apps/api/audio_engine`. `repaint`,
+  `cover` y `stems` responden 501. `health()` exige torch, heartlib, pesos y
+  CUDA/bitsandbytes (si el device es CUDA).
+- **Auto**: ACE-Step → HeartMuLa → error explícito. Nunca usa un proveedor
+  externo. Sólo cae a simulation con `MUSIC_LAB_ALLOW_SIM_FALLBACK=true`, y el
+  resultado se marca con `mode=simulation`.
+- **Rutas de audio**: `repaint`, `cover` y `stems` sólo aceptan archivos dentro
+  de `MUSIC_LAB_OUTPUT_DIR` para evitar lecturas arbitrarias del filesystem.
+- **Formato**: WAV y MP3 vía libsndfile. Si el build de libsndfile no trae MP3,
+  el servicio responde 501 `OUTPUT_FORMAT_UNSUPPORTED`.
+- **Jobs**: en memoria + cola asyncio + semáforo. No sobreviven a un reinicio;
+  es una decisión explícita de esta fase.
+- **IDs**: el adaptador crea el archivo con su propio UUID y el manager
+  reemplaza `result.job_id` por el job público. La ruta del audio es la fuente
+  de verdad, no el nombre del archivo.
+- **Docker**: no se pudo ejecutar `docker build --check` en este entorno
+  (Docker no está instalado). Los Dockerfiles quedan escritos y sujetos a
+  validación en un host con Docker.
