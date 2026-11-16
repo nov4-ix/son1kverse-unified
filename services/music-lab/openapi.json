@@ -1,0 +1,1298 @@
+{
+  "components": {
+    "schemas": {
+      "AdapterHealth": {
+        "properties": {
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineName"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "engine",
+          "ready"
+        ],
+        "title": "AdapterHealth",
+        "type": "object"
+      },
+      "Capabilities": {
+        "properties": {
+          "active_engine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_mode": {
+            "title": "Default Mode",
+            "type": "string"
+          },
+          "engines": {
+            "items": {
+              "$ref": "#/components/schemas/EngineName"
+            },
+            "title": "Engines",
+            "type": "array"
+          },
+          "max_concurrency": {
+            "title": "Max Concurrency",
+            "type": "integer"
+          },
+          "methods": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Methods",
+            "type": "array"
+          },
+          "modes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array"
+          },
+          "output_formats": {
+            "items": {
+              "$ref": "#/components/schemas/OutputFormat"
+            },
+            "title": "Output Formats",
+            "type": "array"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "default_mode",
+          "modes",
+          "engines",
+          "methods",
+          "output_formats",
+          "max_concurrency"
+        ],
+        "title": "Capabilities",
+        "type": "object"
+      },
+      "CoverRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "bpm": {
+            "default": 120,
+            "maximum": 300.0,
+            "minimum": 30.0,
+            "title": "Bpm",
+            "type": "integer"
+          },
+          "duration_s": {
+            "default": 30.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 600.0,
+            "title": "Duration S",
+            "type": "number"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "key": {
+            "default": "C",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics"
+          },
+          "master": {
+            "default": false,
+            "title": "Master",
+            "type": "boolean"
+          },
+          "output_format": {
+            "$ref": "#/components/schemas/OutputFormat",
+            "default": "wav"
+          },
+          "prompt": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "reference_audio_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Audio Path"
+          },
+          "seed": {
+            "default": 0,
+            "maximum": 4294967295.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "source_audio_path": {
+            "title": "Source Audio Path",
+            "type": "string"
+          },
+          "style_tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Style Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "prompt",
+          "source_audio_path"
+        ],
+        "title": "CoverRequest",
+        "type": "object"
+      },
+      "EngineName": {
+        "enum": [
+          "simulation",
+          "ace-step",
+          "heartmula"
+        ],
+        "title": "EngineName",
+        "type": "string"
+      },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "GenerateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "bpm": {
+            "default": 120,
+            "maximum": 300.0,
+            "minimum": 30.0,
+            "title": "Bpm",
+            "type": "integer"
+          },
+          "duration_s": {
+            "default": 30.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 600.0,
+            "title": "Duration S",
+            "type": "number"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "key": {
+            "default": "C",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics"
+          },
+          "master": {
+            "default": false,
+            "title": "Master",
+            "type": "boolean"
+          },
+          "output_format": {
+            "$ref": "#/components/schemas/OutputFormat",
+            "default": "wav"
+          },
+          "prompt": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "reference_audio_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Audio Path"
+          },
+          "seed": {
+            "default": 0,
+            "maximum": 4294967295.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "style_tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Style Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "title": "GenerateRequest",
+        "type": "object"
+      },
+      "GenerationResult": {
+        "properties": {
+          "audio_path": {
+            "title": "Audio Path",
+            "type": "string"
+          },
+          "duration_s": {
+            "title": "Duration S",
+            "type": "number"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineName"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/EngineName"
+          },
+          "output_format": {
+            "$ref": "#/components/schemas/OutputFormat",
+            "default": "wav"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id",
+          "audio_path",
+          "duration_s",
+          "sample_rate",
+          "engine",
+          "mode"
+        ],
+        "title": "GenerationResult",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Job": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operation": {
+            "enum": [
+              "generate",
+              "repaint",
+              "cover",
+              "stems"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenerationResult"
+              },
+              {
+                "$ref": "#/components/schemas/StemsResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "operation",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Job",
+        "type": "object"
+      },
+      "JobAccepted": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "status_url"
+        ],
+        "title": "JobAccepted",
+        "type": "object"
+      },
+      "JobStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed"
+        ],
+        "title": "JobStatus",
+        "type": "string"
+      },
+      "OutputFormat": {
+        "enum": [
+          "wav",
+          "mp3"
+        ],
+        "title": "OutputFormat",
+        "type": "string"
+      },
+      "RepaintRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "bpm": {
+            "default": 120,
+            "maximum": 300.0,
+            "minimum": 30.0,
+            "title": "Bpm",
+            "type": "integer"
+          },
+          "duration_s": {
+            "default": 30.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 600.0,
+            "title": "Duration S",
+            "type": "number"
+          },
+          "end_s": {
+            "exclusiveMinimum": 0.0,
+            "title": "End S",
+            "type": "number"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "key": {
+            "default": "C",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics"
+          },
+          "master": {
+            "default": false,
+            "title": "Master",
+            "type": "boolean"
+          },
+          "output_format": {
+            "$ref": "#/components/schemas/OutputFormat",
+            "default": "wav"
+          },
+          "prompt": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "reference_audio_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Audio Path"
+          },
+          "seed": {
+            "default": 0,
+            "maximum": 4294967295.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "source_audio_path": {
+            "title": "Source Audio Path",
+            "type": "string"
+          },
+          "start_s": {
+            "minimum": 0.0,
+            "title": "Start S",
+            "type": "number"
+          },
+          "style_tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Style Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "prompt",
+          "source_audio_path",
+          "start_s",
+          "end_s"
+        ],
+        "title": "RepaintRequest",
+        "type": "object"
+      },
+      "ServiceHealth": {
+        "properties": {
+          "engine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdapterHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "service",
+          "version",
+          "mode"
+        ],
+        "title": "ServiceHealth",
+        "type": "object"
+      },
+      "StemsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "bpm": {
+            "default": 120,
+            "maximum": 300.0,
+            "minimum": 30.0,
+            "title": "Bpm",
+            "type": "integer"
+          },
+          "duration_s": {
+            "default": 30.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 600.0,
+            "title": "Duration S",
+            "type": "number"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "key": {
+            "default": "C",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics"
+          },
+          "master": {
+            "default": false,
+            "title": "Master",
+            "type": "boolean"
+          },
+          "output_format": {
+            "$ref": "#/components/schemas/OutputFormat",
+            "default": "wav"
+          },
+          "prompt": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "reference_audio_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Audio Path"
+          },
+          "seed": {
+            "default": 0,
+            "maximum": 4294967295.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "source_audio_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Audio Path"
+          },
+          "style_tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Style Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "title": "StemsRequest",
+        "type": "object"
+      },
+      "StemsResult": {
+        "properties": {
+          "duration_s": {
+            "title": "Duration S",
+            "type": "number"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineName"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/EngineName"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          },
+          "stems": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "drums",
+                "bass",
+                "other"
+              ]
+            },
+            "title": "Stems",
+            "type": "object"
+          }
+        },
+        "required": [
+          "job_id",
+          "stems",
+          "duration_s",
+          "sample_rate",
+          "engine",
+          "mode"
+        ],
+        "title": "StemsResult",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "CPU-first audio generation service. No external generation APIs.",
+    "title": "son1kverse-music-lab",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceHealth"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/v1/capabilities": {
+      "get": {
+        "operationId": "capabilities_v1_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Capabilities",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/v1/cover": {
+      "post": {
+        "operationId": "cover_v1_cover_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cover",
+        "tags": [
+          "generation"
+        ]
+      }
+    },
+    "/v1/generate": {
+      "post": {
+        "operationId": "generate_v1_generate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate",
+        "tags": [
+          "generation"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/audio": {
+      "get": {
+        "operationId": "get_job_audio_v1_jobs__job_id__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stem",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "drums",
+                    "bass",
+                    "other"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stem"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job Audio",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/repaint": {
+      "post": {
+        "operationId": "repaint_v1_repaint_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepaintRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Repaint",
+        "tags": [
+          "generation"
+        ]
+      }
+    },
+    "/v1/stems": {
+      "post": {
+        "operationId": "stems_v1_stems_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stems",
+        "tags": [
+          "generation"
+        ]
+      }
+    }
+  }
+}

@@ -127,6 +127,7 @@ class JobAccepted(BaseModel):
 class Capabilities(BaseModel):
     service: str
     default_mode: str
+    active_engine: EngineName | None = None
     modes: list[str]
     engines: list[EngineName]
     methods: list[str]
@@ -140,3 +141,4 @@ class ServiceHealth(BaseModel):
     version: str
     mode: str
     engine: AdapterHealth | None = None
+    reason: str | None = None
