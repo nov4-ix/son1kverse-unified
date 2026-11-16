@@ -38,7 +38,6 @@ export enum ProviderType {
   OLLAMA       = 'ollama',
   MUSICGEN     = 'musicgen',
   STABLE_AUDIO = 'stable_audio',
-  SUNO         = 'suno',
   ACE_STEP     = 'ace_step',   // Motor de base musical extrema velocidad (diffusion)
 }
 

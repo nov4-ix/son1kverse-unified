@@ -170,7 +170,7 @@ export class Pixel implements IOrchestrator {
             duration_seconds: options?.durationSeconds ?? 30,
             bpm:              bpm >= 40 && bpm <= 250 ? bpm : undefined,
             title:            prompt.slice(0, 80),
-            lyrics:           typeof musical.suno === 'string' ? musical.suno : null,
+            lyrics:           null,
             structure:        Array.isArray(musical.instruments)
               ? (musical.instruments as string[])
               : null,
@@ -420,8 +420,7 @@ export class Pixel implements IOrchestrator {
       const bpm = Math.round(bpmRaw)
       const totalDurationSeconds = options?.durationSeconds ?? 180 // 3 min por defecto
 
-      const sunoLyrics = typeof musical.suno === 'string' ? musical.suno : ''
-      const songLyrics = (lyrics ?? sunoLyrics).trim()
+      const songLyrics = (lyrics ?? '').trim()
       if (!songLyrics) {
         throw new Error('Se requiere letra aprobada para generar una canción coherente')
       }

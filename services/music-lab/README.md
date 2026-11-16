@@ -1,7 +1,7 @@
 # Music Lab
 
 Servicio FastAPI de generación de audio **CPU-first** para SON1KVERSE.
-No usa Suno ni ninguna API externa de generación.
+No usa APIs externas de generación.
 
 ## Modos
 

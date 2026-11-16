@@ -9,7 +9,7 @@
 
 ## Qué es esto
 
-SON1KVERSE no es un generador musical. No es un clon de Suno.
+SON1KVERSE no es un generador musical aislado. Es un sistema creativo con identidad propia.
 
 Es un **sistema operativo creativo** que aprende cómo creas y usa múltiples modelos de IA para amplificar tu identidad artística.
 

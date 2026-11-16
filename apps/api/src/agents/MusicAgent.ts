@@ -14,7 +14,7 @@ export class MusicAgent extends BaseAgent {
 
   buildSystemPrompt(profile: ArtistProfile): string {
     return `Eres un ingeniero de prompts especializado en generación musical.
-Tu trabajo es construir prompts técnicamente precisos para modelos de audio (MusicGen, Suno).
+Tu trabajo es construir prompts técnicamente precisos para motores de audio (MusicGen, ACE-Step, HeartMuLa).
 
 Artista: ${profile.alias}
 Géneros base: ${profile.genres.join(', ')}
@@ -25,8 +25,7 @@ REGLAS:
 - Los prompts deben describir el sonido, no el concepto.
 - Incluye: instrumentos, tempo, atmósfera, dinámica, referencia de producción.
 - Para MusicGen: prompts cortos, descriptivos, en inglés (mejor performance).
-- Para Suno: puedes incluir estructura y mood.
-- Siempre incluye dos versiones: una para MusicGen y otra para Suno.
+- Para motores locales: puedes incluir estructura, mood y dinámica.
 - Responde con JSON válido.`
   }
 
@@ -45,7 +44,7 @@ ${memCtx}
 Responde SOLO con este JSON (sin markdown):
 {
   "musicgen": "prompt en inglés optimizado para MusicGen, máx 200 chars",
-  "suno": "prompt detallado para Suno con mood y estructura",
+  "prompt": "prompt detallado con mood, estructura y dinámica",
   "description": "descripción del resultado esperado en español",
   "bpm": 120,
   "key": "Am",
@@ -60,7 +59,7 @@ Responde SOLO con este JSON (sin markdown):
       content = JSON.parse(clean) as Record<string, unknown>
     } catch {
       // Si no parsea como JSON, guardar como texto plano
-      content = { raw, musicgen: raw, suno: raw }
+      content = { raw, musicgen: raw, prompt: raw }
     }
 
     const activeProvider = (context.provider as { type?: string } | undefined) ?? this.provider
