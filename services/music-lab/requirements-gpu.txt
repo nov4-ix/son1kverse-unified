@@ -1,0 +1,29 @@
+# GPU-only dependencies. Installed exclusively by Dockerfile.gpu or manually.
+# The CPU image/services must never install this file.
+-r requirements.txt
+
+# PyTorch (CUDA 12.x wheels). Adjust the index URL to the host CUDA version.
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch>=2.4,<2.11
+torchaudio>=2.4,<2.11
+transformers>=4.40
+accelerate>=0.29
+safetensors>=0.4
+huggingface_hub>=0.22
+sentencepiece>=0.1.99
+einops>=0.7
+
+# HeartMuLa (verified against the local reference implementation):
+# heartlib exposes HeartMuLaGenPipeline and HeartCodec.detokenize().
+heartlib @ git+https://github.com/HeartMuLa/heartlib.git
+torchtune==0.4.0
+torchao==0.9.0
+vector-quantize-pytorch>=1.27.15
+bitsandbytes>=0.43.0
+
+# ACE-Step 1.5:
+# TODO(verify-api): pin the official ACE-Step 1.5 package/repo once its public
+# install name is verified. The adapter loads the library lazily and keeps the
+# inference call isolated behind _run_inference with a TODO(verify-api) marker.
+# Install it manually in the GPU image, for example:
+#   pip install <official-ace-step-package>

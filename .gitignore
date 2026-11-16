@@ -13,3 +13,12 @@ coverage/
 *.log
 output/
 .cache/
+
+services/music-lab/.venv/
+services/music-lab/outputs/
+services/music-lab/.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+services/music-lab/models/

@@ -1,0 +1,28 @@
+services:
+  music-lab:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    image: son1kverse-music-lab:gpu
+    restart: unless-stopped
+    environment:
+      MUSIC_LAB_MODE: auto
+      MUSIC_LAB_OUTPUT_DIR: /outputs
+      MUSIC_LAB_MAX_CONCURRENCY: "1"
+      MUSIC_LAB_API_KEY: ${MUSIC_LAB_API_KEY:-}
+      ACE_STEP_MODEL_PATH: /models/ace-step
+      HEARTMULA_CKPT_DIR: /models/heartmula
+      ACE_STEP_DEVICE: cuda
+      HEARTMULA_DEVICE: cuda
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./models:/models:ro
+      - ./outputs:/outputs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
