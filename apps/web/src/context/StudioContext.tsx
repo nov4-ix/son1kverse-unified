@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
-import { api, isGenerationResult, jobAudioUrl, type JobStatus, type MusicJob } from '../lib/api'
+import { api, ApiError, isGenerationResult, jobAudioUrl, type JobStatus, type MusicJob } from '../lib/api'
+import { useAuth } from './AuthContext'
 import { orchestrateAandR } from '../lib/pixelAandR'
 import { composeLiteraryPrompt, DEFAULT_KNOBS, knobsToStyleTags, signalForJob, signalForKnobs, type LiteraryKnobs } from '../lib/pixelPersonality'
 
@@ -29,6 +30,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [releases, setReleases] = useState<ReleaseDraft[]>([])
+  const { token, logout } = useAuth()
 
   const setKnob = useCallback((key: keyof LiteraryKnobs, value: number) => {
     setKnobs((curr) => {
@@ -43,7 +45,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     try {
       const accepted = await start()
       setLastJobId(accepted.job_id)
-      const finished = await api.pollJob(accepted.job_id, (tick) => {
+      const finished = await api.pollJob(accepted.job_id, token, (tick) => {
         setJob(tick); setJobStatus(tick.status)
         if (tick.status !== 'queued') setPixelSignal(signalForJob(tick.status))
       })
@@ -52,9 +54,18 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       if (isGenerationResult(finished.result)) { setLastAudioPath(finished.result.audio_path); setLastJobId(finished.job_id) }
       setPixelSignal(signalForJob(finished.status))
     } catch (cause) {
-      setJobStatus('failed'); setError(cause instanceof Error ? cause.message : 'Error de red'); setPixelSignal(signalForJob('failed'))
+      setJobStatus('failed')
+      if (cause instanceof ApiError && cause.status === 401) {
+        logout()
+        setError('Sesión vencida. Entra de nuevo y seguimos donde quedamos.')
+      } else if (cause instanceof ApiError && (cause.status === 429 || cause.code === 'QUOTA_EXCEEDED')) {
+        setError('Cuota agotada. Ni una nota más este mes: cambia de plan o espera el reset.')
+      } else {
+        setError(cause instanceof Error ? cause.message : 'Error de red')
+      }
+      setPixelSignal(signalForJob('failed'))
     } finally { setBusy(false) }
-  }, [])
+  }, [logout, token])
 
   const generate = useCallback(async (input: { prompt: string; lyrics: string }) => {
     const dir = orchestrateAandR(input.prompt, input.lyrics, knobs, releases.length)
@@ -66,22 +77,22 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       key: dir.key,
       style_tags: dir.styleTags,
       output_format: 'wav',
-    }), dir.arNote)
-  }, [knobs, releases.length, runJob])
+    }, token), dir.arNote)
+  }, [knobs, releases.length, runJob, token])
 
   const repaint = useCallback(async (i: { prompt: string; start_s: number; end_s: number }) => {
     if (!lastAudioPath) { setError('Necesitas un audio fuente desde La Terminal'); return }
-    await runJob(() => api.repaint({ prompt: i.prompt, source_audio_path: lastAudioPath, start_s: i.start_s, end_s: i.end_s, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }))
-  }, [knobs, lastAudioPath, runJob])
+    await runJob(() => api.repaint({ prompt: i.prompt, source_audio_path: lastAudioPath, start_s: i.start_s, end_s: i.end_s, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }, token))
+  }, [knobs, lastAudioPath, runJob, token])
 
   const cover = useCallback(async (i: { prompt: string }) => {
     if (!lastAudioPath) { setError('Necesitas un audio fuente desde La Terminal'); return }
-    await runJob(() => api.cover({ prompt: i.prompt, source_audio_path: lastAudioPath, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }))
-  }, [knobs, lastAudioPath, runJob])
+    await runJob(() => api.cover({ prompt: i.prompt, source_audio_path: lastAudioPath, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }, token))
+  }, [knobs, lastAudioPath, runJob, token])
 
   const splitStems = useCallback(async (i: { prompt: string }) => {
-    await runJob(() => api.stems({ prompt: i.prompt, source_audio_path: lastAudioPath, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }))
-  }, [knobs, lastAudioPath, runJob])
+    await runJob(() => api.stems({ prompt: i.prompt, source_audio_path: lastAudioPath, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }, token))
+  }, [knobs, lastAudioPath, runJob, token])
 
   const addRelease = useCallback((title: string, caption: string) => {
     if (!lastJobId) return

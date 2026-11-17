@@ -31,9 +31,10 @@ model User {
   stripeCustomerId      String? @unique
   stripeSubscriptionId  String? @unique
 
-  generationsUsedThisMonth Int    @default(0)
-  generationsLimit         Int    @default(10)
-  storageUsedBytes         BigInt @default(0)
+  generationsUsedThisMonth Int      @default(0)
+  generationsLimit         Int      @default(3)
+  generationsResetAt       DateTime?
+  storageUsedBytes         BigInt   @default(0)
   storageLimit             BigInt @default(1073741824)
 
   isEmailVerified Boolean   @default(false)
@@ -247,6 +248,10 @@ model Generation {
   audioUrl       String?
   waveformUrl    String?
   spectrogramUrl String?
+
+  // ID del job en Music Lab. Permite verificar propiedad sin confiar en el
+  // cliente y sincronizar estado/ruta de audio con la fila local.
+  externalJobId String? @unique
 
   userId  String
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)

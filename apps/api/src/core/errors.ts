@@ -96,3 +96,26 @@ export class InvalidCredentialsError extends Son1kverseError {
     super('Invalid email or password', 'INVALID_CREDENTIALS', 401)
   }
 }
+
+export class ForbiddenError extends Son1kverseError {
+  constructor(message = 'No tienes acceso a este recurso') {
+    super(message, 'FORBIDDEN', 403)
+  }
+}
+
+export class NotFoundError extends Son1kverseError {
+  constructor(message = 'Recurso no encontrado') {
+    super(message, 'NOT_FOUND', 404)
+  }
+}
+
+export class QuotaExceededError extends Son1kverseError {
+  constructor(limit: number) {
+    super(
+      `Cuota agotada: ${limit} generaciones por mes`,
+      'QUOTA_EXCEEDED',
+      429,
+      { limit },
+    )
+  }
+}

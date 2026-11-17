@@ -1,6 +1,8 @@
+import { SUBSCRIPTION_PLANS } from '@son1k/shared-types'
 import { AlvaeSymbol, LiteraryKnob, PlatformLogo } from '@son1k/shared-ui'
 import { useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { AuthedAudio } from '../components/AuthedAudio'
 import { useStudio } from '../context/StudioContext'
 import { useSystemMode } from '../context/SystemModeContext'
 import { orchestrateAandR } from '../lib/pixelAandR'
@@ -12,12 +14,7 @@ const ARCHIVE = [
   { title: 'Imperfección Perfecta', artist: 'VanguardBeats', plays: '4.5K', duration: '3:55' },
 ] as const
 
-const PLANS = [
-  { name: 'Free', price: '$0', period: '/mes', desc: 'Comienza tu viaje musical', features: ['3 generaciones/mes', 'Calidad estándar', 'Uso personal'], pro: false },
-  { name: 'Pro', price: '$29', period: '/mes', desc: 'Para creadores activos', features: ['100 generaciones/mes', 'Calidad alta', 'Uso comercial'], pro: false },
-  { name: 'Premium', price: '$69', period: '/mes', desc: 'Para profesionales', features: ['500 generaciones/mes', 'Descarga de stems', 'API incluida'], pro: true },
-  { name: 'Enterprise', price: 'Contacto', period: '', desc: 'Soluciones a medida', features: ['Ilimitado', 'API dedicada', 'Soporte 24/7'], pro: false },
-] as const
+const PLANS = SUBSCRIPTION_PLANS
 
 export function ClassicHubView() {
   const { user, logout } = useAuth()
@@ -112,7 +109,11 @@ export function ClassicHubView() {
           </div>
         </section>
         <section id="archivo" className="space-y-6">
-          <h2 className="text-2xl font-bold text-white">El Archivo</h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-2xl font-bold text-white">El Archivo</h2>
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-amber-300">Vista de demostración</span>
+          </div>
+          <p className="font-mono text-[11px] text-zinc-500">Estas piezas son ejemplos ficticios de la interfaz. Tus lanzamientos reales viven en tu credencial ALVAE.</p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {ARCHIVE.map((item) => (
               <div key={item.title} className="overflow-hidden rounded-xl border border-white/10 bg-[#121722]">
@@ -140,14 +141,14 @@ export function ClassicHubView() {
           <h2 className="text-2xl font-bold text-center text-white">Elige tu plan</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {PLANS.map((plan) => (
-              <div key={plan.name} className={plan.pro ? 'rounded-xl border border-purple-500 bg-[#161B29] p-6 flex flex-col justify-between' : 'rounded-xl border border-white/10 bg-[#121722] p-6 flex flex-col justify-between'}>
+              <div key={plan.tier} className={plan.highlighted ? 'rounded-xl border border-purple-500 bg-[#161B29] p-6 flex flex-col justify-between' : 'rounded-xl border border-white/10 bg-[#121722] p-6 flex flex-col justify-between'}>
                 <div className="space-y-2">
                   <div className="font-bold text-white">{plan.name}</div>
-                  <div className="text-2xl font-bold text-white">{plan.price}<span className="text-xs font-normal text-zinc-400">{plan.period}</span></div>
-                  <p className="text-xs text-zinc-400">{plan.desc}</p>
+                  <div className="text-2xl font-bold text-white">{plan.priceLabel}<span className="text-xs font-normal text-zinc-400">{plan.period}</span></div>
+                  <p className="text-xs text-zinc-400">{plan.description}</p>
                   <ul className="space-y-1 pt-2 text-xs text-zinc-300">{plan.features.map((f) => <li key={f}>✓ {f}</li>)}</ul>
                 </div>
-                <button type="button" className={plan.pro ? 'mt-6 w-full rounded-lg bg-purple-600 py-2.5 text-xs font-semibold text-white' : 'mt-6 w-full rounded-lg bg-white/10 py-2.5 text-xs font-semibold text-white'}>Comenzar ahora</button>
+                <button type="button" className={plan.highlighted ? 'mt-6 w-full rounded-lg bg-purple-600 py-2.5 text-xs font-semibold text-white' : 'mt-6 w-full rounded-lg bg-white/10 py-2.5 text-xs font-semibold text-white'}>Comenzar ahora</button>
               </div>
             ))}
           </div>
@@ -156,7 +157,7 @@ export function ClassicHubView() {
       </main>
       {lastAudioUrl && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#D4A359]/40 bg-[#0B0E14]/95 px-6 py-3 backdrop-blur">
-          <div className="mx-auto flex max-w-5xl items-center gap-4"><span className="font-mono text-xs text-[#D4A359]">MASTER ({min}:{sec})</span><audio controls src={lastAudioUrl} className="h-9 flex-1" /></div>
+          <div className="mx-auto flex max-w-5xl items-center gap-4"><span className="font-mono text-xs text-[#D4A359]">MASTER ({min}:{sec})</span><AuthedAudio src={lastAudioUrl} className="h-9 flex-1" /></div>
         </div>
       )}
     </div>

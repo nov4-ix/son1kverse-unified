@@ -2,14 +2,17 @@
 
 import type { FastifyInstance } from 'fastify'
 import { OrchestrationRequestSchema, FeedbackSchema, successResponse } from '../../core/contracts.js'
-import { ValidationError } from '../../core/errors.js'
+import { ForbiddenError, NotFoundError, ValidationError } from '../../core/errors.js'
 import { Pixel } from '../../orchestration/Pixel.js'
+import { prisma } from '../../storage/client.js'
+import { getAuthUserId } from '../request-auth.js'
 
 const pixel = new Pixel()
 
 // ─── Almacenamiento en memoria para jobs de canción coherente ───
 interface CoherentJob {
   trackId: string
+  userId: string
   status: 'queued' | 'processing' | 'done' | 'error'
   downloadUrl?: string
   error?: string
@@ -19,11 +22,23 @@ interface CoherentJob {
 
 const coherentJobStore = new Map<string, CoherentJob>()
 
+async function assertProfileOwner(profileId: string, userId: string): Promise<void> {
+  const profile = await prisma.artistProfile.findUnique({
+    where: { id: profileId },
+    select: { userId: true },
+  })
+  if (profile === null) throw new NotFoundError('Perfil no encontrado')
+  if (profile.userId !== userId) throw new ForbiddenError()
+}
+
 export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
   // POST /api/v1/orchestrate — el flujo principal de Pixel
   app.post('/orchestrate', async (req, reply) => {
     const parsed = OrchestrationRequestSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+
+    const userId = getAuthUserId(req)
+    await assertProfileOwner(parsed.data.profileId, userId)
 
     const result = await pixel.orchestrate(parsed.data)
     return reply.status(200).send(successResponse(result))
@@ -36,12 +51,16 @@ export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
     const parsed = OrchestrationRequestSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
 
+    const userId = getAuthUserId(req)
+    await assertProfileOwner(parsed.data.profileId, userId)
+
     const { prompt, lyrics, profileId, sessionId, options } = parsed.data
     const trackId = `coherent_${Date.now().toString(36)}`
 
     // Registrar job como queued
     coherentJobStore.set(trackId, {
       trackId,
+      userId,
       status: 'queued',
       createdAt: new Date(),
     })
@@ -90,6 +109,7 @@ export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
     const { trackId } = req.params as { trackId: string }
     if (!trackId) throw new ValidationError({ trackId: ['trackId es requerido'] })
 
+    const userId = getAuthUserId(req)
     const job = coherentJobStore.get(trackId)
     if (!job) {
       return reply.status(404).send({
@@ -97,6 +117,7 @@ export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
         error: { code: 'NOT_FOUND', message: 'Coherent job no encontrado' },
       })
     }
+    if (job.userId !== userId) throw new ForbiddenError()
 
     return reply.status(200).send(successResponse({
       trackId: job.trackId,
@@ -111,6 +132,14 @@ export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
   app.post('/feedback', async (req, reply) => {
     const parsed = FeedbackSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+
+    const userId = getAuthUserId(req)
+    const artifact = await prisma.artifact.findUnique({
+      where: { id: parsed.data.artifactId },
+      select: { profile: { select: { userId: true } } },
+    })
+    if (artifact === null) throw new NotFoundError('Artifact no encontrado')
+    if (artifact.profile.userId !== userId) throw new ForbiddenError()
 
     await pixel.processFeedback(parsed.data)
     return reply.status(200).send(successResponse({ ok: true }))

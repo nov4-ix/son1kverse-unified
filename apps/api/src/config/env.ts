@@ -10,10 +10,21 @@ try {
 } catch {
 }
 
+const BooleanFromString = z
+  .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
+  .transform((value) => value === true || value === 'true' || value === '1')
+
 const ConfigSchema = z.object({
   NODE_ENV:    z.enum(['development', 'production', 'test']).default('development'),
   PORT:        z.coerce.number().default(3000),
   HOST:        z.string().default('0.0.0.0'),
+
+  // Lista separada por comas. Nunca se hardcodean orígenes en el servidor.
+  CORS_ORIGINS: z.string().default('http://localhost:5173'),
+  // Bypass explícito y solo para desarrollo local. Se ignora en production.
+  ALLOW_ANON_DEV: BooleanFromString.default(false),
+  // Los ADMIN no consumen cuota cuando esto es true.
+  ADMIN_UNLIMITED: BooleanFromString.default(true),
 
   DATABASE_URL: z.string().default('postgresql://son1kverse:son1kverse@localhost:5432/son1kverse?schema=public'),
 

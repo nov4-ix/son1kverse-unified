@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@son1k/shared-types": "workspace:^",
     "@son1k/shared-ui": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

@@ -1,6 +1,7 @@
 import { LiteraryKnob } from '@son1k/shared-ui'
 import { useMemo, useState } from 'react'
 import { useStudio } from '../context/StudioContext'
+import { AuthedAudio } from '../components/AuthedAudio'
 import { orchestrateAandR } from '../lib/pixelAandR'
 
 export function GeneratorView() {
@@ -36,7 +37,7 @@ export function GeneratorView() {
         {lastAudioUrl && (
           <div className="border border-alvae-gold/30 bg-alvae-bg/80 p-4 space-y-2">
             <p className="font-terminal text-[10px] uppercase tracking-[0.22em] text-alvae-gold">Master listo // {min}:{sec}</p>
-            <audio controls src={lastAudioUrl} className="w-full" />
+            <AuthedAudio src={lastAudioUrl} className="w-full" />
           </div>
         )}
       </div>

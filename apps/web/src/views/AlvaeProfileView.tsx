@@ -1,6 +1,8 @@
+import { DEFAULT_SUBSCRIPTION_TIER, generationLimitForTier } from '@son1k/shared-types'
 import { AlvaeSymbol } from '@son1k/shared-ui'
 import { useState } from 'react'
 import { LoginForm } from '../components/LoginForm'
+import { AuthedAudio } from '../components/AuthedAudio'
 import { useAuth } from '../context/AuthContext'
 import { useStudio } from '../context/StudioContext'
 
@@ -12,7 +14,7 @@ export function AlvaeProfileView() {
 
   const alvae = profile?.alvaeAccount ?? null
   const used = profile?.user.generationsUsedThisMonth ?? 0
-  const limit = profile?.user.generationsLimit ?? 10
+  const limit = profile?.user.generationsLimit ?? generationLimitForTier(DEFAULT_SUBSCRIPTION_TIER)
 
   return (
     <section className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
@@ -85,7 +87,7 @@ export function AlvaeProfileView() {
             <li key={release.id} className="border border-alvae-gold/20 p-4">
               <p className="font-terminal text-sm text-alvae-gold">{release.title}</p>
               <p className="mt-1 font-terminal text-xs text-alvae-muted">{release.caption}</p>
-              <audio className="mt-3 w-full" controls src={release.audioUrl} />
+              <AuthedAudio className="mt-3 w-full" src={release.audioUrl} />
             </li>
           ))}
         </ul>
