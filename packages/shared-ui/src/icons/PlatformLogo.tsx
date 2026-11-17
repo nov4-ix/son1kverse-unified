@@ -1,61 +1,22 @@
 import type { SVGProps } from 'react'
 
-type PlatformLogoProps = SVGProps<SVGSVGElement> & {
-  title?: string
-}
-
-export function PlatformLogo({
-  title = 'SON1KVERSE',
-  ...props
-}: PlatformLogoProps) {
+export function PlatformLogo(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg
-      viewBox="0 0 64 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      role="img"
-      aria-label={title}
-      {...props}
-    >
-      <title>{title}</title>
-      <polygon
-        points="32,6 58,56 6,56"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinejoin="miter"
-      />
-      <polygon
-        points="32,14 51,50 13,50"
-        stroke="currentColor"
-        strokeWidth="0.8"
-        opacity="0.45"
-      />
-      <ellipse
-        cx="32"
-        cy="36"
-        rx="11"
-        ry="6.4"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
-      <circle cx="32" cy="36" r="3.2" fill="currentColor" />
-      <circle cx="33.4" cy="34.8" r="0.9" fill="#0A0B0E" />
-      <line
-        x1="21"
-        y1="36"
-        x2="26"
-        y2="36"
-        stroke="currentColor"
-        strokeWidth="1.2"
-      />
-      <line
-        x1="38"
-        y1="36"
-        x2="43"
-        y2="36"
-        stroke="currentColor"
-        strokeWidth="1.2"
-      />
+    <svg viewBox="0 0 200 200" fill="none" aria-label="SON1KVERS3" {...props}>
+      <defs>
+        <linearGradient id="son1kLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#B858FE" stopOpacity="1" />
+          <stop offset="50%" stopColor="#047AF6" stopOpacity="1" />
+          <stop offset="100%" stopColor="#40FDAE" stopOpacity="1" />
+        </linearGradient>
+      </defs>
+      <circle cx="100" cy="100" r="90" stroke="url(#son1kLogoGrad)" strokeWidth="2.5" fill="none" opacity="0.35" />
+      <path d="M 100 30 L 170 150 L 30 150 Z" stroke="url(#son1kLogoGrad)" strokeWidth="2.5" fill="none" />
+      <circle cx="100" cy="100" r="25" stroke="url(#son1kLogoGrad)" strokeWidth="2.5" fill="none" />
+      <circle cx="100" cy="100" r="8" fill="url(#son1kLogoGrad)" />
+      <line x1="100" y1="30" x2="100" y2="70" stroke="url(#son1kLogoGrad)" strokeWidth="1.5" opacity="0.6" />
+      <line x1="30" y1="150" x2="60" y2="110" stroke="url(#son1kLogoGrad)" strokeWidth="1.5" opacity="0.6" />
+      <line x1="170" y1="150" x2="140" y2="110" stroke="url(#son1kLogoGrad)" strokeWidth="1.5" opacity="0.6" />
     </svg>
   )
 }

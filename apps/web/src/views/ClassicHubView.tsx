@@ -50,7 +50,7 @@ export function ClassicHubView() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <button type="button" onMouseDown={beginHold} onMouseUp={endHold} onMouseLeave={endHold} onTouchStart={beginHold} onTouchEnd={endHold} className="flex items-center gap-3 text-left">
             <PlatformLogo className="h-9 w-9 text-[#D4A359]" />
-            <div><div className="font-bold tracking-wider text-white">SON1KVERS3</div><div className="font-mono text-[10px] text-emerald-400">ACE-STEP 1.5</div></div>
+            <div><div className="font-bold tracking-wider text-white">SON1KVERS3</div><div className="font-mono text-[10px] text-emerald-400">MUSIC GENERATION PLATFORM V3</div></div>
           </button>
           <nav className="hidden md:flex items-center gap-6 font-mono text-xs tracking-widest text-zinc-400">
             <a href="#generator" className="hover:text-white">GENERATOR</a><a href="#archivo" className="hover:text-white">ARCHIVO</a><a href="#tools" className="hover:text-white">TOOLS</a><a href="#planes" className="hover:text-white">PLANES</a>
@@ -66,7 +66,7 @@ export function ClassicHubView() {
         <section id="generator" className="space-y-8">
           <div className="flex flex-col items-center text-center space-y-3">
             <PlatformLogo className="h-20 w-20 text-[#D4A359]" />
-            <h1 className="font-mono text-3xl md:text-4xl font-bold tracking-[0.22em] text-white">[SON1KVERS3]</h1>
+            <h1 className="font-mono text-3xl md:text-5xl font-extrabold tracking-[0.22em] bg-gradient-to-r from-[#B858FE] via-[#047AF6] to-[#40FDAE] bg-clip-text text-transparent">[SON1KVERS3]</h1>
             <p className="font-mono text-lg text-sky-400">Ctrl+Alt= Humanity</p>
             <p className="font-mono text-xs text-emerald-400">PIXEL A&amp;R: {pixelSignal}</p>
           </div>
