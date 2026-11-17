@@ -64,7 +64,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       duration_s: dir.duration_s,
       bpm: dir.bpm,
       key: dir.key,
-      style_tags: [...knobsToStyleTags(knobs), `structure:${dir.structure.join('-')}`, 'complete-song'],
+      style_tags: dir.styleTags,
       output_format: 'wav',
     }), dir.arNote)
   }, [knobs, releases.length, runJob])
