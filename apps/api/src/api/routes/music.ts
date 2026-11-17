@@ -15,7 +15,7 @@ const MusicLabStemSchema = z.enum(['drums', 'bass', 'other'])
 const MusicLabGenerateSchema = z.object({
   prompt:               z.string().min(1).max(4000),
   lyrics:               z.string().max(20_000).nullable().optional(),
-  duration_s:           z.number().gt(0).max(600).default(30),
+  duration_s:           z.number().gt(0).max(600).default(180),
   seed:                 z.number().int().min(0).max(2 ** 32 - 1).optional(),
   bpm:                  z.number().int().min(30).max(300).optional(),
   key:                  z.string().min(1).max(16).optional(),

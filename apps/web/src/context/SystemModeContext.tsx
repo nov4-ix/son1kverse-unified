@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 export type SystemMode = 'xentrix' | 'alvae';
 
@@ -6,8 +6,11 @@ interface SystemModeContextValue {
   mode: SystemMode;
   isTransitioning: boolean;
   targetMode: SystemMode;
+  displayedProtocol: string;
   toggleMode: () => void;
   setMode: (next: SystemMode) => void;
+  beginHold: () => void;
+  endHold: () => void;
 }
 
 const SystemModeContext = createContext<SystemModeContextValue | null>(null);
@@ -20,39 +23,41 @@ export const SystemModeProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   });
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [targetMode, setTargetMode] = useState<SystemMode>(mode);
+  const holdTimerRef = useRef<number | null>(null);
 
   const triggerTransition = useCallback((next: SystemMode) => {
     if (isTransitioning || next === mode) return;
     setTargetMode(next);
     setIsTransitioning(true);
-
-    setTimeout(() => {
-      setModeState(next);
-      localStorage.setItem(STORAGE_KEY, next);
-    }, 750);
-
-    setTimeout(() => {
-      setIsTransitioning(false);
-    }, 1500);
+    setTimeout(() => { setModeState(next); localStorage.setItem(STORAGE_KEY, next); }, 750);
+    setTimeout(() => { setIsTransitioning(false); }, 1500);
   }, [isTransitioning, mode]);
 
   const toggleMode = useCallback(() => {
     triggerTransition(mode === 'xentrix' ? 'alvae' : 'xentrix');
   }, [mode, triggerTransition]);
 
+  const beginHold = useCallback(() => {
+    if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = window.setTimeout(() => { toggleMode(); }, 1500);
+  }, [toggleMode]);
+
+  const endHold = useCallback(() => {
+    if (holdTimerRef.current !== null) { window.clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'h') {
-        e.preventDefault();
-        toggleMode();
-      }
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'h') { e.preventDefault(); toggleMode(); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleMode]);
 
+  const displayedProtocol = mode === 'alvae' ? 'ctrl+ALT=humanity' : 'ctrl+alt=Security';
+
   return (
-    <SystemModeContext.Provider value={{ mode, isTransitioning, targetMode, toggleMode, setMode: triggerTransition }}>
+    <SystemModeContext.Provider value={{ mode, isTransitioning, targetMode, displayedProtocol, toggleMode, setMode: triggerTransition, beginHold, endHold }}>
       {children}
     </SystemModeContext.Provider>
   );
