@@ -39,7 +39,16 @@ class Settings(BaseSettings):
     ace_step_dtype: str = "bfloat16"
     ace_step_offload: bool = False
     ace_step_python_module: str = "acestep"
-    ace_step_api_verified: bool = False
+    ace_step_config_path: str = "acestep-v15-turbo"
+    ace_step_auto_download: bool = True
+    ace_step_download_source: str | None = None
+    ace_step_use_lm: bool = False
+    ace_step_lm_model: str = "acestep-5Hz-lm-1.7B"
+    ace_step_lm_backend: str = "pt"
+    ace_step_inference_steps: int = Field(default=8, ge=1, le=200)
+    ace_step_guidance_scale: float = Field(default=7.0, ge=1.0, le=15.0)
+    ace_step_shift: float = Field(default=3.0, gt=0, le=5)
+    ace_step_vocal_language: str = "unknown"
 
     heartmula_ckpt_dir: Path = Path("/models/heartmula")
     heartmula_version: str = "3B"

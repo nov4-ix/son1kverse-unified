@@ -1,0 +1,8 @@
+# Official ACE-Step 1.5 package (GitHub repo; PyPI "ace-step" is still v1.x).
+# Install with --no-deps because upstream pins its own +cu128 torch build and
+# vendors nano-vllm at acestep/third_parts/nano-vllm (not on PyPI):
+#
+#   pip install --no-deps -r requirements-ace-step.txt
+#
+# Runtime dependencies are declared in requirements-gpu.txt.
+ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git@main

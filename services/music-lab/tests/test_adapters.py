@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.adapters.ace_step import AceStepAdapter, format_keyscale
 from app.adapters.registry import AdapterRegistry
 from app.config import Settings
+from app.schemas import GenerateRequest
 from tests.helpers import run
 
 
@@ -61,3 +63,30 @@ def test_auto_fallback_is_opt_in(tmp_path: Path) -> None:
         await registry.close()
 
     run(scenario())
+
+
+def test_ace_step_keyscale_and_caption_mapping(tmp_path: Path) -> None:
+    assert format_keyscale("C") == "C major"
+    assert format_keyscale("Am") == "A minor"
+    assert format_keyscale("F# minor") == "F# minor"
+    assert format_keyscale("Db") == "Db major"
+
+    adapter = AceStepAdapter(_settings(tmp_path))
+    request = GenerateRequest(
+        prompt="dark reggaeton",
+        style_tags=["808 bass", "night"],
+        bpm=92,
+        key="Am",
+    )
+    assert adapter._build_caption(request) == "dark reggaeton; styles: 808 bass, night"
+
+
+def test_ace_step_health_does_not_require_weights_when_auto_download(tmp_path: Path) -> None:
+    settings = _settings(
+        tmp_path,
+        ace_step_model_path=tmp_path / "missing-models",
+        ace_step_auto_download=True,
+        ace_step_device="cpu",
+    )
+    reasons = AceStepAdapter(settings)._health_reasons()
+    assert not any("weights not found" in reason for reason in reasons)

@@ -26,8 +26,9 @@ RUN apt-get update \
     && python3.11 -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip setuptools wheel
 
-COPY requirements.txt requirements-gpu.txt ./
-RUN pip install --no-cache-dir -r requirements-gpu.txt
+COPY requirements.txt requirements-gpu.txt requirements-ace-step.txt ./
+RUN pip install --no-cache-dir -r requirements-gpu.txt \
+    && pip install --no-cache-dir --no-deps -r requirements-ace-step.txt
 
 COPY app ./app
 COPY scripts ./scripts

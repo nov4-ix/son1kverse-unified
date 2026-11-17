@@ -216,10 +216,13 @@ Fuentes de solo lectura:
 
 - **CPU por defecto**: `MUSIC_LAB_MODE=simulation` y las dependencias base no
   incluyen torch, transformers, ACE-Step ni HeartMuLa.
-- **ACE-Step**: no se pudo verificar la API pública de inferencia en las fuentes
-  locales. La carga/validación está lista, pero `_run_inference` lanza 501 con
-  `code=ACE_STEP_API_UNVERIFIED` y `health()` mantiene `ready=false` hasta que
-  `ACE_STEP_API_VERIFIED=true`. Ver `TODO(verify-api)`.
+- **ACE-Step 1.5**: API verificada contra el repo oficial
+  `ace-step/ACE-Step-1.5` (paquete `acestep` 1.5.0):
+  `AceStepHandler.initialize_service()` descarga los checkpoints de
+  `ACE-Step/Ace-Step1.5` y `acestep.inference.generate_music()` genera el audio.
+  El adaptador soporta `generate`, `repaint` y `cover`; `stems` responde 501
+  porque el pipeline no expone separación drums/bass/other. El modo DiT-only
+  (`ACE_STEP_USE_LM=false`) no requiere `nano-vllm`.
 - **HeartMuLa**: sólo `generate`; se confirmó el uso de
   `heartlib.HeartMuLaGenPipeline` leyendo `apps/api/audio_engine`. `repaint`,
   `cover` y `stems` responden 501. `health()` exige torch, heartlib, pesos y
