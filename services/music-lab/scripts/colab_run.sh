@@ -12,7 +12,7 @@
 #   ACE_STEP_USE_LM=false           true also loads the 5Hz LM (heavier)
 #   MUSIC_LAB_OUTPUT_DIR=...        Generated audio dir (default: <repo>/outputs)
 #   MUSIC_LAB_API_KEY=...           Enables x-api-key auth on /v1/*
-#   PORT=8001                       Local HTTP port
+#   PORT=8002                       Local HTTP port
 #   CLOUDFLARED_BIN=/tmp/cloudflared
 set -Eeuo pipefail
 
@@ -20,7 +20,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 PYTHON="${PYTHON:-python3}"
-PORT="${PORT:-8001}"
+PORT="${PORT:-8002}"
 LOG_DIR="${MUSIC_LAB_LOG_DIR:-$ROOT/outputs/colab-logs}"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-/tmp/cloudflared}"
 

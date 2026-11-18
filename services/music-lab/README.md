@@ -36,7 +36,7 @@ vendoriza `nano-vllm`, por eso se instala sin dependencias:
 pip install -r requirements.txt -r requirements-gpu.txt
 pip install --no-deps -r requirements-ace-step.txt
 export ACE_STEP_MODEL_PATH=/models/ace-step
-MUSIC_LAB_MODE=ace-step uvicorn app.main:app --host 0.0.0.0 --port 8001
+MUSIC_LAB_MODE=ace-step uvicorn app.main:app --host 0.0.0.0 --port 8002
 ```
 
 Con `ACE_STEP_AUTO_DOWNLOAD=true` los checkpoints se descargan de
@@ -46,7 +46,7 @@ mapea `prompt`, `lyrics`, `duration_s`, `bpm`, `key`, `seed` y `style_tags`.
 `ACE_STEP_USE_LM=false` (default) ejecuta solo el DiT; no requiere `nano-vllm`.
 
 En Google Colab: `bash scripts/colab_run.sh` instala todo, levanta el servicio
-en `:8001` y publica una URL `https://*.trycloudflare.com` sin cuenta ni token.
+en `:8002` y publica una URL `https://*.trycloudflare.com` sin cuenta ni token.
 
 ## API
 

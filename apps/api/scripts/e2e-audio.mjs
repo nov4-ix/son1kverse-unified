@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const OUTPUT_DIR = path.resolve(__dirname, '..', 'output', 'e2e')
 
-const API_BASE = 'http://127.0.0.1:3000/api/v1'
+const API_BASE = 'http://127.0.0.1:3001/api/v1'
 
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))

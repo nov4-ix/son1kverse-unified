@@ -20,20 +20,17 @@ El producto central es **PIXEL** — un director creativo IA que analiza context
 ## Setup rápido (Ubuntu, monorepo)
 
 ```bash
-pnpm install
-pnpm db:generate
+make setup
+make db-migrate
 ```
 
-Copia `.env.example` a `.env` y `apps/api/.env.example` a `apps/api/.env`.
-Edita ambos con:
-```bash
-JWT_SECRET=$(openssl rand -base64 64)
-OPENROUTER_API_KEY=tu_key_aqui
-```
+`make setup` crea `apps/api/.env` desde `.env.example` y genera un
+`JWT_SECRET` aleatorio. Si quieres proveedores de IA, añade
+`OPENROUTER_API_KEY` en ese archivo.
 
-Arranca desde la raíz:
+Arranca API + Music Lab + Web desde la raíz (API en `:3001`):
 ```bash
-pnpm dev
+make dev
 ```
 
 ---
@@ -94,8 +91,7 @@ POST /api/v1/memory/:id/score         — Puntuar una memoria
 POST /api/v1/memory/consolidate/:profileId — Consolidar memoria
 ```
 
-### Audio Engine (requiere `Authorization: Bearer <JWT>` en producción;
-### en desarrollo `NODE_ENV=development` se permite sin token)
+### Audio Engine (requiere `Authorization: Bearer <JWT>`)
 ```
 GET  /api/v1/audio/health             — Salud del motor Python (siempre público)
 POST /api/v1/audio/generate           — Encolar generación de audio
@@ -112,10 +108,10 @@ GET  /api/v1/audio/download/:trackId  — Descargar WAV (proxy con JWT)
 
 ```bash
 # Crear perfil artístico
-curl -X POST http://localhost:3000/api/v1/profile \
+curl -X POST http://localhost:3001/api/v1/profile \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "userId": "cuid_del_usuario",
     "alias": "nov4-ix",
     "genres": ["synthwave", "cyberpunk", "dark pop"],
     "bpmRange": { "min": 90, "max": 130, "preferred": 110 },
@@ -126,8 +122,9 @@ curl -X POST http://localhost:3000/api/v1/profile \
   }'
 
 # Orquestar con Pixel
-curl -X POST http://localhost:3000/api/v1/orchestrate \
+curl -X POST http://localhost:3001/api/v1/orchestrate \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "prompt": "Necesito un hook melancólico sobre soledad digital",
     "profileId": "profile_id_aqui",

@@ -16,7 +16,7 @@ const BooleanFromString = z
 
 const ConfigSchema = z.object({
   NODE_ENV:    z.enum(['development', 'production', 'test']).default('development'),
-  PORT:        z.coerce.number().default(3000),
+  PORT:        z.coerce.number().default(3001),
   HOST:        z.string().default('0.0.0.0'),
 
   // Lista separada por comas. Nunca se hardcodean orígenes en el servidor.
