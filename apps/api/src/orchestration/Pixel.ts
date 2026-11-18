@@ -15,18 +15,24 @@
 
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
+import { selectPixelTone } from '@son1k/shared-types'
 import type { IOrchestrator } from '../core/interfaces.js'
 import type { CreativeResult, OrchestrationRequest } from '../core/types.js'
 import type { FeedbackDTO } from '../core/contracts.js'
 import { AgentType, ArtifactType, MemoryType, ProviderType } from '../core/types.js'
 import { ProfileNotFoundError } from '../core/errors.js'
 import { eventBus, SystemEvent } from '../core/events.js'
-import { selectPixelTone } from '../core/pixel/pixelPersonality.js'
 import { AnalysisService } from '../analysis/AnalysisService.js'
 import { IdentityService } from '../identity/IdentityService.js'
 import { MemoryService } from '../memory/MemoryService.js'
 import { ArtifactRepository } from '../storage/repositories/ArtifactRepository.js'
-import { audioEngineClient } from '../services/AudioEngineClient.js'
+import {
+  musicLabClient,
+  type MusicLabEngine,
+  type MusicLabGenerateParams,
+  type MusicLabJob,
+} from '../clients/musicLab.js'
+import { logger } from '../lib/logger.js'
 import { Router } from './Router.js'
 import { OpenRouterProvider } from '../providers/OpenRouterProvider.js'
 import { OllamaProvider } from '../providers/OllamaProvider.js'
@@ -80,7 +86,7 @@ export class Pixel implements IOrchestrator {
     this.memory    = deps?.memory    ?? new MemoryService()
     this.artifacts = deps?.artifacts ?? new ArtifactRepository()
 
-    console.log('⬡  PIXEL inicializado — Sistema Operativo Creativo listo')
+    logger.info('PIXEL inicializado — Sistema Operativo Creativo listo')
   }
 
   async orchestrate(request: OrchestrationRequest): Promise<CreativeResult> {
@@ -139,10 +145,10 @@ export class Pixel implements IOrchestrator {
         model:    finalModel,
       })
 
-      // Track encolado en el Audio Engine, si el agente MUSIC lo disparó
-      let audioTrackId: string | null = null
+      // Track encolado en Music Lab, si el agente MUSIC lo disparó
+      let audioJobId: string | null = null
 
-      // ─── 5b. MusicAgent → Audio Engine (generación real) ─────────────────
+      // ─── 5b. MusicAgent → Music Lab (generación real) ─────────────────────
       if (agent.type === AgentType.MUSIC) {
         try {
           const musical = (typeof result.content === 'object' && result.content !== null)
@@ -163,80 +169,91 @@ export class Pixel implements IOrchestrator {
           // Pydantic valida `bpm` como entero: un decimal del LLM devolvería 422.
           const bpm = Math.round(bpmRaw)
 
-          const job = await audioEngineClient.generate({
-            genre,
-            mood,
-            language:         options?.language ?? 'es',
-            duration_seconds: options?.durationSeconds ?? 30,
-            bpm:              bpm >= 40 && bpm <= 250 ? bpm : undefined,
-            title:            prompt.slice(0, 80),
-            lyrics:           null,
-            structure:        Array.isArray(musical.instruments)
-              ? (musical.instruments as string[])
-              : null,
-            engine: options?.engine,
-          })
+          const params: MusicLabGenerateParams = {
+            prompt:     this.buildCaption(genre, mood, musical),
+            lyrics:     null,
+            duration_s: options?.durationSeconds ?? 30,
+            bpm:        bpm >= 30 && bpm <= 300 ? bpm : undefined,
+            style_tags: this.buildStyleTags(genre, intent.emotion, musical),
+            engine:     this.toMusicLabEngine(options?.engine),
+            master:     true,
+          }
 
-          audioTrackId = job.track_id
-          const download_url = `/api/v1/audio/download/${encodeURIComponent(job.track_id)}`
-          console.log(`⬡  Audio Engine encoló track ${job.track_id}`)
+          const accepted = await musicLabClient.generate(params)
+          audioJobId = accepted.job_id
+          logger.info({ jobId: accepted.job_id }, 'Music Lab encoló generación')
 
           // Espera SÍNCRONA: el artifact se persiste con el estado FINAL y la
-          // URL real del WAV, no con 'queued'. Si no termina en el timeout, se
+          // ruta real del WAV, no con 'queued'. Si no termina en el timeout, se
           // persiste como 'queued' y el seguimiento en background (paso 6b)
-          // sigue intentando hasta que el motor resuelva.
+          // sigue intentando hasta que Music Lab resuelva.
           try {
-            const finished = await audioEngineClient.waitForCompletion(job.track_id, 2_700_000, 3_000)
-            const localWav = await this.saveTrackToOutput(job.track_id)
+            const finished = await musicLabClient.waitForJob(accepted.job_id, {
+              timeoutMs: 2_700_000,
+              pollIntervalMs: 3_000,
+            })
+            const localWav = await this.saveAudioToOutput(accepted.job_id, finished)
 
             result = {
               ...result,
               type: ArtifactType.AUDIO_URL,
               content: {
                 ...musical,
-                track_id:     job.track_id,
-                download_url,
-                status:       'done',
-                engine_used:  finished.result?.engine_used ?? null,
-                local_wav:    localWav,
-                result:       finished.result ?? null,
+                track_id:    accepted.job_id,
+                status:      'done',
+                engine_used: finished.result?.engine ?? null,
+                mode:        finished.mode,
+                local_wav:   localWav,
+                result:      finished.result ?? null,
               },
             }
-            audioTrackId = null // ya resolvió: no hace falta seguimiento en 6b
-            console.log(`⬡  Audio Engine completó track ${job.track_id} → artifact en estado done`)
+            audioJobId = null // ya resolvió: no hace falta seguimiento en 6b
+            logger.info({ jobId: accepted.job_id }, 'Music Lab completó track → artifact done')
           } catch (waitErr) {
             result = {
               ...result,
               type: ArtifactType.AUDIO_URL,
               content: {
                 ...musical,
-                track_id:     job.track_id,
-                download_url,
-                status:       'queued',
-                message:      'Generación en curso — seguimiento en background',
+                track_id: accepted.job_id,
+                status:   'queued',
+                message:  'Generación en curso — seguimiento en background',
               },
             }
-            console.warn(
-              `[Pixel] Track ${job.track_id} no terminó a tiempo (${waitErr instanceof Error ? waitErr.message : String(waitErr)}) — se persiste 'queued' y se sigue en background`,
+            logger.warn(
+              { jobId: accepted.job_id, error: waitErr instanceof Error ? waitErr.message : String(waitErr) },
+              'Track no terminó a tiempo; se persiste queued y se sigue en background',
             )
           }
         } catch (audioErr) {
-          // Fallback: conservar el music_prompt si el motor no está disponible
-          console.warn(
-            '[Pixel] Audio Engine no disponible — se guarda music_prompt:',
-            audioErr instanceof Error ? audioErr.message : String(audioErr),
+          // Fallback: conservar el music_prompt si Music Lab no está disponible
+          logger.warn(
+            { error: audioErr instanceof Error ? audioErr.message : String(audioErr) },
+            'Music Lab no disponible — se guarda music_prompt',
           )
         }
       }
 
       // ─── 6. Persistir resultado como artifact ─────────────────────────────
-      const artifact = await this.artifacts.create(result, profileId, sessionId)
+      let artifact = await this.artifacts.create(result, profileId, sessionId)
 
-      // 6b. Si el Audio Engine encoló un track, hacerle seguimiento en
-      // background: el artifact pasa de 'queued' a 'done' con las rutas del WAV
-      // y las métricas reales en cuanto el motor termine.
-      if (audioTrackId) {
-        void this.settleAudioTrack(artifact.id, audioTrackId)
+      if (result.type === ArtifactType.AUDIO_URL) {
+        result = {
+          ...result,
+          content: {
+            ...(result.content as Record<string, unknown>),
+            download_url: this.artifactAudioUrl(artifact.id),
+          },
+        }
+        await this.artifacts.updateContent(artifact.id, result.content)
+        artifact = { ...artifact, content: result.content }
+      }
+
+      // 6b. Si Music Lab encoló un track, hacerle seguimiento en background:
+      // el artifact pasa de 'queued' a 'done' con las rutas del WAV y las
+      // métricas reales en cuanto Music Lab termine.
+      if (audioJobId) {
+        void this.settleAudioTrack(artifact.id, audioJobId)
       }
 
       // ─── 7. Guardar en memoria para futuras sesiones ──────────────────────
@@ -265,7 +282,10 @@ export class Pixel implements IOrchestrator {
         sessionId, result, durationMs, timestamp: new Date(),
       })
 
-      console.log(`⬡  Pixel completó en ${durationMs}ms — agente: ${agent.type}, modelo: ${finalModel}`)
+      logger.info(
+        { durationMs, agent: agent.type, model: finalModel },
+        'Pixel completó orquestación',
+      )
       return result
 
     } catch (err) {
@@ -279,27 +299,67 @@ export class Pixel implements IOrchestrator {
     }
   }
 
-  // Descarga el WAV terminado desde el motor y lo guarda en output/tracks/
-  // para que haya prueba física en disco de la generación. Best-effort: si
-  // falla, el artifact conserva la download_url del proxy.
-  private async saveTrackToOutput(trackId: string): Promise<string | null> {
-    try {
-      const res = await fetch(audioEngineClient.getDownloadUrl(trackId), {
-        signal: AbortSignal.timeout(60_000),
-      })
-      if (!res.ok) {
-        console.warn(`⬡  [Pixel] Descarga de ${trackId} respondió HTTP ${res.status}`)
-        return null
+  private toMusicLabEngine(engine: 'heartmula' | 'ace_step' | undefined): MusicLabEngine | undefined {
+    if (engine === 'ace_step') return 'ace-step'
+    if (engine === 'heartmula') return 'heartmula'
+    return undefined
+  }
+
+  private buildCaption(genre: string, mood: string, musical: Record<string, unknown>): string {
+    const description = typeof musical.description === 'string' ? musical.description : ''
+    return [genre, mood, description]
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)
+      .join('; ')
+      .slice(0, 4000)
+  }
+
+  private buildStyleTags(
+    genre: string,
+    emotions: readonly string[],
+    musical: Record<string, unknown>,
+  ): string[] {
+    const tags = new Set<string>()
+    tags.add(genre)
+    for (const emotion of emotions) {
+      if (emotion.trim().length > 0) tags.add(emotion.trim())
+    }
+    for (const key of ['instruments', 'style_tags', 'styleTags'] as const) {
+      const raw = musical[key]
+      if (!Array.isArray(raw)) continue
+      for (const item of raw) {
+        if (typeof item === 'string' && item.trim().length > 0) tags.add(item.trim())
       }
-      const buf = Buffer.from(await res.arrayBuffer())
+    }
+    return [...tags].slice(0, 32)
+  }
+
+  private artifactAudioUrl(artifactId: string): string {
+    return `/api/v1/artifacts/${encodeURIComponent(artifactId)}/audio`
+  }
+
+  // Descarga el audio terminado desde Music Lab y lo guarda en output/tracks/
+  // para que haya prueba física en disco de la generación. Best-effort: si
+  // falla, el artifact conserva la ruta de descarga autenticada.
+  private async saveAudioToOutput(jobId: string, job: MusicLabJob): Promise<string | null> {
+    try {
+      const audio = await musicLabClient.getAudio(jobId)
+      const buf = Buffer.from(audio.buffer)
       const dir = path.join(process.cwd(), 'output', 'tracks')
       await fs.mkdir(dir, { recursive: true })
-      const file = path.join(dir, `${trackId}.wav`)
+      const extension = audio.contentType.includes('mpeg') ? 'mp3' : 'wav'
+      const file = path.join(dir, `${jobId}.${extension}`)
       await fs.writeFile(file, buf)
-      console.log(`⬡  [Pixel] WAV guardado en ${file} (${(buf.byteLength / 1024).toFixed(1)} KB)`)
+      logger.info(
+        { jobId, file, status: job.status, bytes: buf.byteLength },
+        'WAV guardado en disco',
+      )
       return file
     } catch (err) {
-      console.warn(`⬡  [Pixel] No se pudo guardar el WAV de ${trackId}: ${err instanceof Error ? err.message : String(err)}`)
+      logger.warn(
+        { jobId, error: err instanceof Error ? err.message : String(err) },
+        'No se pudo guardar el audio del job',
+      )
       return null
     }
   }
@@ -307,10 +367,13 @@ export class Pixel implements IOrchestrator {
   // Sigue un track encolado hasta que termine y actualiza el artifact con el
   // resultado real (rutas del WAV, métricas, motor usado). No bloquea la
   // orquestación: corre en background y sus errores sólo se loguean.
-  private async settleAudioTrack(artifactId: string, trackId: string): Promise<void> {
+  private async settleAudioTrack(artifactId: string, jobId: string): Promise<void> {
     try {
-      const job      = await audioEngineClient.waitForCompletion(trackId, 2_700_000, 3_000)
-      const localWav = await this.saveTrackToOutput(trackId)
+      const job      = await musicLabClient.waitForJob(jobId, {
+        timeoutMs: 2_700_000,
+        pollIntervalMs: 5_000,
+      })
+      const localWav = await this.saveAudioToOutput(jobId, job)
       const artifact = await this.artifacts.findById(artifactId)
       const content  = (typeof artifact.content === 'object' && artifact.content !== null)
         ? artifact.content as Record<string, unknown>
@@ -318,34 +381,44 @@ export class Pixel implements IOrchestrator {
 
       await this.artifacts.updateContent(artifactId, {
         ...content,
-        status:       job.status,
-        engine_used:  job.result?.engine_used ?? null,
+        status:       'done',
+        engine_used:  job.result?.engine ?? null,
+        mode:         job.mode,
         local_wav:    localWav,
         result:       job.result ?? null,
-        download_url: `/api/v1/audio/download/${encodeURIComponent(trackId)}`,
+        download_url: this.artifactAudioUrl(artifactId),
       })
 
-      const engineUsed = job.result?.engine_used
-      if (engineUsed && engineUsed !== 'heartmula') {
-        console.warn(
-          `⬡  [Pixel] Track ${trackId} generado con fallback sintético (${engineUsed}) — no es inferencia HeartMuLa`,
-        )
-      } else {
-        console.log(`⬡  Audio Engine completó track ${trackId}`)
-      }
+      logger.info({ jobId, engine: job.result?.engine ?? null }, 'Music Lab completó track')
     } catch (err) {
-      console.warn(
-        `⬡  [Pixel] Seguimiento de track ${trackId} falló: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      const message = err instanceof Error ? err.message : String(err)
+      logger.warn({ jobId, error: message }, 'Seguimiento de track falló')
+      try {
+        const artifact = await this.artifacts.findById(artifactId)
+        const content  = (typeof artifact.content === 'object' && artifact.content !== null)
+          ? artifact.content as Record<string, unknown>
+          : {}
+        await this.artifacts.updateContent(artifactId, {
+          ...content,
+          status:       'error',
+          error:        message,
+          download_url: this.artifactAudioUrl(artifactId),
+        })
+      } catch (updateErr) {
+        logger.warn(
+          { artifactId, error: updateErr instanceof Error ? updateErr.message : String(updateErr) },
+          'No se pudo marcar el artifact como error',
+        )
+      }
     }
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // Orquestación de Coherencia — canción completa por bloques de ≤15s
+  // Orquestación de Coherencia — una sola llamada single-shot a Music Lab
   // ──────────────────────────────────────────────────────────────────────
-  async orchestrateCoherentSong(request: OrchestrationRequest & { externalTrackId?: string }): Promise<CreativeResult> {
+  async orchestrateCoherentSong(request: OrchestrationRequest): Promise<CreativeResult> {
     const start = Date.now()
-    const { prompt, lyrics, profileId, sessionId, options, externalTrackId } = request
+    const { prompt, lyrics, profileId, sessionId, options } = request
 
     eventBus.emit(SystemEvent.ORCHESTRATION_STARTED, {
       sessionId, profileId, prompt, timestamp: new Date(),
@@ -376,7 +449,7 @@ export class Pixel implements IOrchestrator {
 
       // ─── 2. Contenido musical del agente (género, mood, estructura…) ───
       // Si el agente falla (p. ej. OPENROUTER_API_KEY no configurada),
-      // usamos valores por defecto para seguir con la orquesta de coherencia.
+      // usamos valores por defecto para seguir con la generación.
       let result: CreativeResult = {
         id: crypto.randomUUID(),
         profileId,
@@ -400,10 +473,9 @@ export class Pixel implements IOrchestrator {
           ? agentResult.content as Record<string, unknown>
           : {}
       } catch (agentErr) {
-        console.warn(
-          '⬡  [Coherente] Agente MUSIC falló (' +
-          (agentErr instanceof Error ? agentErr.message : String(agentErr)) +
-          '), usando valores por defecto',
+        logger.warn(
+          { error: agentErr instanceof Error ? agentErr.message : String(agentErr) },
+          'Agente MUSIC falló; usando valores por defecto',
         )
       }
 
@@ -418,114 +490,69 @@ export class Pixel implements IOrchestrator {
         ? (musical.bpm as number)
         : (intent.bpm ?? profile.bpmRange.preferred)
       const bpm = Math.round(bpmRaw)
-      const totalDurationSeconds = options?.durationSeconds ?? 180 // 3 min por defecto
+      const totalDurationSeconds = options?.durationSeconds ?? 180
 
       const songLyrics = (lyrics ?? '').trim()
       if (!songLyrics) {
         throw new Error('Se requiere letra aprobada para generar una canción coherente')
       }
 
-      // ─── 3. Segmentar letra en secciones musicales (Intro, Verse, Chorus…) ─
-      const sections = splitLyricsIntoSections(songLyrics, totalDurationSeconds)
-      const totalFragments = sections.length
-      console.log(`⬡  [Coherente] ${totalFragments} secciones para "${prompt.slice(0,60)}"`)
-
-      // ─── 4. Bucle secuencial con semilla del fragmento anterior ─────────
-      const fragmentWavPaths: string[] = []
-      let prevWavPath: string | null = null
-
-      for (let i = 0; i < totalFragments; i++) {
-        const section = sections[i]!
-        const fragment = section.lyrics.trim()
-        const sectionBpm = section.bpm_offset != null ? Math.round(bpm + section.bpm_offset) : bpm
-        const sectionDuration = Math.max(10, Math.min(60, section.duration_s))
-
-        console.log(
-          `⬡  [Coherente] Sección ${i + 1}/${totalFragments} "${section.name}" ` +
-          `(~${sectionDuration}s, mood=${section.emotion}, energy=${section.energy}) — "${fragment.slice(0,50)}"`
-        )
-
-        // Selección de motor: 'heartmula' (por defecto) o 'ace_step' (extrema velocidad)
-        const engine = (options?.engine as 'heartmula' | 'ace_step' | undefined) ?? 'heartmula'
-
-        const job = await audioEngineClient.generate({
-          genre,
-          mood: section.emotion || mood,
-          language: options?.language ?? 'es',
-          duration_seconds: sectionDuration,
-          fragment_lyrics: fragment,
-          seed_audio_path: prevWavPath,
-          fragment_index: i,
-          total_fragments: totalFragments,
-          is_coherent_song: true,
-          bpm: sectionBpm >= 40 && sectionBpm <= 250 ? sectionBpm : undefined,
-          title: `${prompt.slice(0, 60)} [${section.name}]`,
-          section_name: section.name,
-          section_emotion: section.emotion,
-          section_energy: section.energy,
-          engine,
-          skip_mastering: true,
-          skip_analysis: true,
-        })
-
-        const finished = await audioEngineClient.waitForCompletion(
-          job.track_id, 8 * 60 * 60 * 1000, 3_000, // 8 horas por fragmento en CPU (tiempo ilimitado para el cliente vía polling)
-        )
-        const localWav = await this.saveTrackToOutput(job.track_id)
-        if (localWav) {
-          fragmentWavPaths.push(localWav)
-          prevWavPath = localWav // semilla para el siguiente bloque
-        }
+      // ─── 3. Una sola llamada single-shot: la letra estructurada y los
+      // style tags de Pixel A&R viajan completos a ACE-Step (o al motor
+      // activo de Music Lab). No hay fragmentos ni concatenación.
+      const params: MusicLabGenerateParams = {
+        prompt:     this.buildCaption(genre, mood, musical),
+        lyrics:     songLyrics,
+        duration_s: totalDurationSeconds,
+        bpm:        bpm >= 30 && bpm <= 300 ? bpm : undefined,
+        key:        typeof musical.key === 'string' ? musical.key : undefined,
+        style_tags: this.buildStyleTags(genre, intent.emotion, musical),
+        engine:     this.toMusicLabEngine(options?.engine),
+        master:     true,
       }
 
-      if (fragmentWavPaths.length === 0) {
-        throw new Error('No se generó ningún fragmento de audio')
-      }
-
-      // ─── 5. Concatenar todos los fragmentos en una canción final ───────
-      const concatenated = await audioEngineClient.concatenate(
-        fragmentWavPaths,
-        `${prompt.slice(0, 40)}_coherent_${Date.now()}.wav`,
+      logger.info(
+        { duration_s: totalDurationSeconds, bpm, styleTags: params.style_tags },
+        'Canción coherente: llamada single-shot a Music Lab',
       )
 
-      // ─── 6. Guardar WAV final en output/tracks/ del backend Node ──────
-      const trackId = externalTrackId ?? `coherent_${Date.now().toString(36)}`
-      const finalBuf = Buffer.from(concatenated.buffer)
-      const dir = path.join(process.cwd(), 'output', 'tracks')
-      await fs.mkdir(dir, { recursive: true })
-      const finalFile = path.join(dir, `${trackId}.wav`)
-      await fs.writeFile(finalFile, finalBuf)
+      const accepted = await musicLabClient.generate(params)
+      const finished = await musicLabClient.waitForJob(accepted.job_id, {
+        timeoutMs: 8 * 60 * 60 * 1000,
+        pollIntervalMs: 5_000,
+      })
+      const localWav = await this.saveAudioToOutput(accepted.job_id, finished)
+      const trackId = accepted.job_id
 
-      const download_url = `/api/v1/audio/download/${encodeURIComponent(trackId)}`
-
-      // ─── 7. Construir el CreativeResult ───────────────────────────────
+      // ─── 4. Construir el CreativeResult ───────────────────────────────
       result = {
         ...result,
         type: ArtifactType.AUDIO_URL,
         content: {
           ...musical,
-          track_id: trackId,
-          download_url,
-          status: 'done',
-          engine_used: 'heartmula',
-          local_wav: finalFile,
-          fragments: totalFragments,
-          fragment_paths: fragmentWavPaths,
-          final_path: finalFile,
+          track_id:      trackId,
+          status:        'done',
+          engine_used:   finished.result?.engine ?? null,
+          mode:          finished.mode,
+          local_wav:     localWav,
           coherent_song: true,
-          result: {
-            fragments: totalFragments,
-            fragment_paths: fragmentWavPaths,
-            final_path: finalFile,
-            coherent_song: true,
-          },
+          single_shot:   true,
+          result:        finished.result ?? null,
         },
       }
 
-      // ─── 8. Persistir artifact ────────────────────────────────────────
+      // ─── 5. Persistir artifact ────────────────────────────────────────
       const artifact = await this.artifacts.create(result, profileId, sessionId)
+      result = {
+        ...result,
+        content: {
+          ...(result.content as Record<string, unknown>),
+          download_url: this.artifactAudioUrl(artifact.id),
+        },
+      }
+      await this.artifacts.updateContent(artifact.id, result.content)
 
-      // ─── 9. Memoria ───────────────────────────────────────────────────
+      // ─── 6. Memoria ───────────────────────────────────────────────────
       const contentStr = typeof result.content === 'string'
         ? result.content
         : JSON.stringify(result.content)
@@ -544,8 +571,9 @@ export class Pixel implements IOrchestrator {
         sessionId, result, durationMs, timestamp: new Date(),
       })
 
-      console.log(
-        `⬡  Pixel (coherente) completó en ${durationMs}ms — ${totalFragments} fragmentos → ${trackId}`,
+      logger.info(
+        { durationMs, trackId, engine: finished.result?.engine ?? null },
+        'Pixel (coherente) completó canción single-shot',
       )
       return result
 
@@ -582,110 +610,6 @@ export class Pixel implements IOrchestrator {
       artifactId, score, note, timestamp: new Date(),
     })
 
-    console.log(`⬡  Pixel procesó feedback: ${artifactId} → score ${score}`)
+    logger.info({ artifactId, score }, 'Pixel procesó feedback')
   }
-}
-
-/**
- * Estructura de una sección musical para la orquestación coherente.
- */
-interface SongSection {
-  name:           string   // intro, verse, chorus, bridge, outro, pre_chorus, post_chorus
-  duration_s:     number   // duración objetivo en segundos
-  emotion:        string   // melancholic, energetic, calm, aggressive, hopeful...
-  bpm_offset:     number   // variación de BPM respecto al base
-  energy:         number   // 0.0 (suave) a 1.0 (energético)
-  lyrics_hint:    string   // tipo de letra esperada
-  lyrics:         string   // letras asignadas a esta sección
-}
-
-/**
- * Estructura estándar de canción pop/electrónica (duraciones en segundos).
- */
-const DEFAULT_STRUCTURE: SongSection[] = [
-  { name: 'intro',        duration_s: 8,  emotion: 'calm',        bpm_offset: 0,   energy: 0.4, lyrics_hint: 'instrumental', lyrics: '' },
-  { name: 'verse_1',      duration_s: 16, emotion: 'melancholic', bpm_offset: 0,   energy: 0.6, lyrics_hint: 'narrativa',    lyrics: '' },
-  { name: 'pre_chorus',   duration_s: 8,  emotion: 'tense',       bpm_offset: 2,   energy: 0.8, lyrics_hint: 'preparación',  lyrics: '' },
-  { name: 'chorus',       duration_s: 16, emotion: 'energetic',   bpm_offset: 0,   energy: 1.0, lyrics_hint: 'gancho',       lyrics: '' },
-  { name: 'verse_2',      duration_s: 16, emotion: 'melancholic', bpm_offset: 0,   energy: 0.6, lyrics_hint: 'narrativa',    lyrics: '' },
-  { name: 'chorus',       duration_s: 16, emotion: 'energetic',   bpm_offset: 0,   energy: 1.0, lyrics_hint: 'gancho',       lyrics: '' },
-  { name: 'bridge',       duration_s: 8,  emotion: 'aggressive',  bpm_offset: -4,  energy: 0.9, lyrics_hint: 'cambio',       lyrics: '' },
-  { name: 'outro',        duration_s: 12, emotion: 'calm',        bpm_offset: 0,   energy: 0.3, lyrics_hint: 'desvanecimiento', lyrics: '' },
-]
-
-const SECTION_PATTERN = /^\[(\w+)\]$/i
-
-const VOCAL_SECTION_NAMES = new Set([
-  'verse', 'chorus', 'bridge', 'pre_chorus', 'post_chorus', 'outro'
-])
-
-/**
- * Divide una letra en secciones musicales basándose en marcadores [Verse], [Chorus], etc.
- * Si no hay marcadores, reparte la letra equitativamente entre las secciones vocales.
- * Cada sección recibe su duración, emoción y energía definidas en DEFAULT_STRUCTURE,
- * escaladas a la duración total objetivo.
- */
-function splitLyricsIntoSections(lyrics: string, totalDurationSeconds: number): SongSection[] {
-  const sections = DEFAULT_STRUCTURE.map(s => ({ ...s, lyrics: '' }))
-
-  // Escalar duraciones proporcionalmente al total objetivo
-  const totalStd = DEFAULT_STRUCTURE.reduce((sum, s) => sum + s.duration_s, 0)
-  const ratio = totalDurationSeconds / totalStd
-  for (const s of sections) {
-    s.duration_s = Math.max(4, Math.round(s.duration_s * ratio))
-  }
-
-  const lines = lyrics.trim().split(/\n/).filter(Boolean)
-  if (lines.length === 0) return sections
-
-  // Detectar si hay marcadores de sección [Nombre]
-  const hasMarkers = lines.some(l => SECTION_PATTERN.test(l.trim()))
-
-  if (!hasMarkers) {
-    // Repartir equitativamente entre secciones vocales
-    const vocalIdx = sections
-      .map((s, i) => ({ idx: i, name: s.name.toLowerCase() }))
-      .filter(x => VOCAL_SECTION_NAMES.has(x.name))
-      .map(x => x.idx)
-
-    if (vocalIdx.length === 0) {
-      // Si no hay secciones vocales, usar todas
-      vocalIdx.push(...sections.map((_, i) => i))
-    }
-
-    const n = vocalIdx.length
-    const per = Math.max(1, Math.floor(lines.length / n))
-    for (let k = 0; k < n; k++) {
-      const idx = vocalIdx[k]
-      if (idx === undefined) continue
-      const start = k * per
-      const end = k === n - 1 ? lines.length : Math.min(lines.length, (k + 1) * per)
-      const section = sections[idx]
-      if (section) {
-        section.lyrics = lines.slice(start, end).join('\n')
-      }
-    }
-    return sections
-  }
-
-  // Hay marcadores: asignar líneas a la sección correspondiente
-  let currentSection = sections[0]?.name?.toLowerCase() ?? 'intro'
-  const sectionMap: Record<string, string[]> = {}
-
-  for (const line of lines) {
-    const match = SECTION_PATTERN.test(line.trim())
-    if (match) {
-      currentSection = line.trim().slice(1, -1).toLowerCase()
-    } else {
-      if (!sectionMap[currentSection]) sectionMap[currentSection] = []
-      const arr = sectionMap[currentSection]
-      if (arr) arr.push(line)
-    }
-  }
-
-  for (const s of sections) {
-    s.lyrics = (sectionMap[s.name] ?? []).join('\n')
-  }
-
-  return sections
 }

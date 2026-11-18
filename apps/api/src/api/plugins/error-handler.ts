@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyError } from 'fastify'
 import { ZodError } from 'zod'
 import { Son1kverseError } from '../../core/errors.js'
 import { errorResponse } from '../../core/contracts.js'
+import { logger } from '../../lib/logger.js'
 
 export async function errorHandlerPlugin(app: FastifyInstance): Promise<void> {
   app.setErrorHandler((error: FastifyError | Error, _req, reply) => {
@@ -22,7 +23,7 @@ export async function errorHandlerPlugin(app: FastifyInstance): Promise<void> {
     }
 
     // Error genérico
-    console.error('[API] Unhandled error:', error)
+    logger.error({ err: error }, 'Unhandled API error')
     return reply.status(500).send(
       errorResponse('INTERNAL_ERROR', 'Error interno del servidor'),
     )

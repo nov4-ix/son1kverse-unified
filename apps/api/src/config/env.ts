@@ -38,9 +38,6 @@ const ConfigSchema = z.object({
   OPENAI_API_KEY:      z.string().optional(),
   OPENROUTER_API_KEY:  z.string().optional(),
   OLLAMA_BASE_URL:     z.string().url().default('http://localhost:11434'),
-  MUSICGEN_API_URL:    z.string().url().optional().or(z.literal('')),
-  AUDIO_ENGINE_API_URL: z.string().url().default('http://127.0.0.1:8001'),
-
   MUSIC_LAB_URL:     z.string().url().default('http://127.0.0.1:8002'),
   MUSIC_LAB_API_KEY: z.string().default(''),
 

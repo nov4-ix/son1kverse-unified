@@ -91,16 +91,20 @@ POST /api/v1/memory/:id/score         — Puntuar una memoria
 POST /api/v1/memory/consolidate/:profileId — Consolidar memoria
 ```
 
-### Audio Engine (requiere `Authorization: Bearer <JWT>`)
+### Music Lab (requiere `Authorization: Bearer <JWT>` salvo health)
 ```
-GET  /api/v1/audio/health             — Salud del motor Python (siempre público)
-POST /api/v1/audio/generate           — Encolar generación de audio
-GET  /api/v1/audio/status/:trackId    — Estado del track
-GET  /api/v1/audio/download/:trackId  — Descargar WAV (proxy con JWT)
+GET  /api/v1/music/health             — Salud del motor (público)
+POST /api/v1/music/generate           — Encolar generación (consume cuota)
+POST /api/v1/music/repaint            — Repintar un fragmento
+POST /api/v1/music/cover              — Cover sobre un audio existente
+POST /api/v1/music/stems              — Separar stems
+GET  /api/v1/music/jobs/:jobId        — Estado del job (sólo dueño)
+GET  /api/v1/music/jobs/:jobId/audio  — Descargar audio (sólo dueño)
 ```
 
-> El motor Python (`audio_engine/`, puerto 8001) escucha **sólo en 127.0.0.1**:
-> no tiene autenticación propia, la seguridad vive en el backend Node.
+> `services/music-lab` (puerto 8002) es el único motor de audio. La API Node
+> es la única puerta pública: valida JWT, cuota y propiedad antes de hablar con
+> el laboratorio, y no expone su URL interna.
 
 ---
 

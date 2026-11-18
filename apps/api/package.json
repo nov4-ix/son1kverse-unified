@@ -4,15 +4,15 @@
   "description": "Creative Operating System — AI-powered artistic identity orchestration",
   "type": "module",
   "scripts": {
-    "predev": "pnpm --filter @son1k/db build",
+    "predev": "pnpm --filter @son1k/db build && pnpm --filter @son1k/shared-types build",
     "dev": "tsx watch src/server.ts",
     "build": "tsc --outDir dist",
     "start": "node dist/server.js",
+    "pretest": "pnpm --filter @son1k/shared-types build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:verify": "node tests/verify-all.mjs && node tests/test-orchestration.mjs",
     "e2e:audio": "node scripts/e2e-audio.mjs",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write 'src/**/*.ts'"

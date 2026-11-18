@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { api, ApiError, isGenerationResult, jobAudioUrl, type JobStatus, type MusicJob } from '../lib/api'
 import { useAuth } from './AuthContext'
 import { orchestrateAandR } from '../lib/pixelAandR'
-import { composeLiteraryPrompt, DEFAULT_KNOBS, knobsToStyleTags, signalForJob, signalForKnobs, type LiteraryKnobs } from '../lib/pixelPersonality'
+import { composeLiteraryPrompt, DEFAULT_KNOBS, knobsToStyleTags, signalForJob, signalForKnobs, type LiteraryKnobs } from '@son1k/shared-types'
 
 export type ConsoleView = 'generator' | 'ghost' | 'nova'
 export type ReleaseDraft = { id: string; title: string; caption: string; jobId: string; audioUrl: string; createdAt: string }

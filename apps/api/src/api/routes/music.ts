@@ -236,6 +236,20 @@ async function startGeneration(
 }
 
 export async function musicRoutes(app: FastifyInstance): Promise<void> {
+  // GET /api/v1/music/health — salud del único motor de audio (público).
+  app.get('/music/health', async (_req, reply) => {
+    try {
+      const health = await musicLabClient.health()
+      return reply.status(health.status === 'ok' ? 200 : 503).send(successResponse(health))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'MUSIC_LAB_UNAVAILABLE', message },
+      })
+    }
+  })
+
   app.post('/music/generate', async (req, reply) => {
     const parsed = MusicLabGenerateSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())

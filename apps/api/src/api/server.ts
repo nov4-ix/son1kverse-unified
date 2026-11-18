@@ -17,7 +17,7 @@ import { musicRoutes } from './routes/music.js'
 const PUBLIC_API_PATHS = new Set([
   '/api/v1/auth/register',
   '/api/v1/auth/login',
-  '/api/v1/audio/health',
+  '/api/v1/music/health',
 ])
 
 function corsOrigins(): string[] {
