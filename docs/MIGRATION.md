@@ -303,6 +303,9 @@ No reescribe el historial de §1–§7.
   `ADMIN_UNLIMITED` configurable. La cuota se devuelve si el job falla.
 - Contraseñas scrypt con formato `salt:hash` en una única columna
   `User.passwordHash`.
+- Los errores de validación conservan `details` y el contrato
+  `{ success: false, error: { code, message, details? } }` en todo el scope
+  raíz de Fastify.
 
 ### 8.2 Arranque reproducible
 
@@ -366,7 +369,7 @@ No reescribe el historial de §1–§7.
 Ejecutado en el host de la rama:
 
 - `pnpm typecheck`: OK.
-- `pnpm --filter @son1k/api test`: 5 archivos, 20 tests aprobados.
+- `pnpm --filter @son1k/api test`: 5 archivos, 21 tests aprobados.
 - `services/music-lab`: `pytest -q`, 20 tests aprobados.
 - `prisma migrate deploy` sobre PostgreSQL 16 temporal: ambas migraciones
   aplicadas.

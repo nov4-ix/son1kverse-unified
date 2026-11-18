@@ -85,6 +85,20 @@ describe('auth global y cuota de música', () => {
     expect(prismaMock.$queryRaw).not.toHaveBeenCalled()
   })
 
+  it('devuelve el contrato de error con details en validaciones', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/music/generate',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { prompt: '' },
+    })
+    expect(response.statusCode).toBe(400)
+    const body = response.json()
+    expect(body.success).toBe(false)
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.details).toBeTruthy()
+  })
+
   it('consume cuota y registra externalJobId con el userId del token', async () => {
     const response = await app.inject({
       method: 'POST',

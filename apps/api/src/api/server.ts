@@ -56,7 +56,8 @@ export async function buildServer() {
       )
     },
   })
-  await app.register(errorHandlerPlugin)
+  // No usar app.register: setErrorHandler debe aplicar al scope raíz.
+  await errorHandlerPlugin(app)
 
   // ─── Auth global ────────────────────────────────────────────────────────────
   // Todo /api/v1/* exige JWT salvo register, login y el health del motor.
