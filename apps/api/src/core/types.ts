@@ -63,7 +63,7 @@ export enum SessionStatus {
 // ─── Pixel Personality ───────────────────────────────────────────────────────
 // Fuente única: packages/shared-types (importado también por apps/web).
 
-import type { PixelMoodId, PixelTone } from '@son1k/shared-types'
+import type { PixelTone } from '@son1k/shared-types'
 export type { PixelMoodId, PixelTone } from '@son1k/shared-types'
 
 // ─── Domain Types ─────────────────────────────────────────────────────────────

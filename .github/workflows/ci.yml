@@ -40,6 +40,7 @@ jobs:
       - run: pnpm --filter @son1k/shared-types build
       - run: pnpm --filter @son1k/db exec prisma migrate deploy
       - run: pnpm typecheck
+      - run: pnpm --filter @son1k/api lint
       - run: pnpm --filter @son1k/api test
       - run: pnpm --filter @son1k/web build
 

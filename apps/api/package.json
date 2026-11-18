@@ -15,7 +15,8 @@
     "test:coverage": "vitest run --coverage",
     "e2e:audio": "node scripts/e2e-audio.mjs",
     "lint": "eslint src --ext .ts",
-    "format": "prettier --write 'src/**/*.ts'"
+    "format": "prettier --write 'src/**/*.ts'",
+    "admin:create": "tsx scripts/create-admin.ts"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",

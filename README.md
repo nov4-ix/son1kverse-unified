@@ -42,6 +42,23 @@ make dev
 
 Si PostgreSQL ya está migrado, `make up` ejecuta `setup + db-migrate + dev` en un solo comando.
 
+## Admin local para pruebas reales
+
+El bootstrap crea o promueve una cuenta `ADMIN` con cuota de generaciones
+ilimitada (`ADMIN_UNLIMITED=true`). La contraseña se pasa por entorno y nunca
+se guarda en el repositorio:
+
+```bash
+ADMIN_EMAIL='nov4-ix@son1kverse.local' \
+ADMIN_ALIAS='Nov4-ix' \
+ADMIN_PASSWORD='<contraseña-de-12-o-más-caracteres>' \
+make admin-create
+```
+
+El script es idempotente: si el email ya existe, actualiza rol, tier y límites.
+Las cuentas `ADMIN` no se bloquean por cuota de generaciones; el contador de
+uso sigue registrándose para auditoría.
+
 `make setup` nunca sobrescribe un `apps/api/.env` existente. El JWT se exige en todas las rutas `/api/v1/*` salvo registro y login; `ALLOW_ANON_DEV=true` solo existe para pruebas locales y se ignora con `NODE_ENV=production`.
 
 ## Puertos
@@ -60,6 +77,8 @@ El proxy de Vite usa `VITE_API_PROXY_TARGET` (default `http://localhost:3001`).
 - `make dev` — Levanta Music Lab, API y Web en paralelo; al salir detiene el laboratorio.
 - `make up` — `setup + db-migrate + dev`.
 - `make typecheck` — Validación estricta de TypeScript (`tsc --noEmit`) en todo el workspace.
+- `make lint` — ESLint de la API.
+- `make admin-create` — Crea o promueve un ADMIN con cuota ilimitada.
 - `make build` — Compilación de producción de todos los paquetes y aplicaciones.
 - `make test` — Tests de la API (Vitest) y de Music Lab (pytest).
 - `make db-up` / `make db-down` — PostgreSQL de desarrollo con `docker-compose.yml` (opcional).
@@ -72,6 +91,7 @@ El proxy de Vite usa `VITE_API_PROXY_TARGET` (default `http://localhost:3001`).
 
 ```bash
 make typecheck
+make lint
 make test
 make build
 ```

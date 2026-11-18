@@ -19,7 +19,7 @@ export abstract class BaseAgent implements IAgent {
   abstract formatResult(raw: string, context: AgentContext): CreativeResult
 
   async execute(context: AgentContext): Promise<CreativeResult> {
-    const { intent, profile } = context
+    const { profile } = context
     const start = Date.now()
 
     try {

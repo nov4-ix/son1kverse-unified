@@ -13,6 +13,7 @@
     "typecheck": "pnpm --filter @son1k/db prisma:generate && pnpm -r exec tsc --noEmit",
     "build": "pnpm -r build",
     "db:validate": "pnpm --filter @son1k/db prisma:validate",
-    "db:generate": "pnpm --filter @son1k/db prisma:generate"
+    "db:generate": "pnpm --filter @son1k/db prisma:generate",
+    "lint": "pnpm --filter @son1k/api lint"
   }
 }

@@ -8,6 +8,7 @@ try {
   const loadEnvFile = (process as typeof process & { loadEnvFile?: () => void }).loadEnvFile
   loadEnvFile?.()
 } catch {
+  // .env es opcional: en producción las variables vienen del entorno.
 }
 
 const BooleanFromString = z

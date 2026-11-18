@@ -7,7 +7,6 @@ import type { ArtistProfile, CreativeIntent } from '../core/types.js'
 import { AgentType, ArtifactType, Emotion } from '../core/types.js'
 import { AnalysisFailedError } from '../core/errors.js'
 import { eventBus, SystemEvent } from '../core/events.js'
-import { config } from '../config/index.js'
 import { logger } from '../lib/logger.js'
 
 // El proveedor se inyecta para evitar acoplamiento

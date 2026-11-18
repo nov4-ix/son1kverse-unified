@@ -3,7 +3,7 @@
 // la lógica de negocio. Nunca confiar en datos sin validar.
 
 import { z } from 'zod'
-import { AgentType, ArtifactType, Emotion, MemoryType, ProviderType } from './types.js'
+import { AgentType, Emotion, MemoryType, ProviderType } from './types.js'
 
 // ─── Shared schemas ───────────────────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ const BrandingConfigSchema = z.object({
 
 export const CreateProfileSchema = z.object({
   userId:         z.string().cuid(),
-  alias:          z.string().min(2).max(50).regex(/^[a-zA-Z0-9_\-]+$/, 'Solo letras, números, guiones y underscores'),
+  alias:          z.string().min(2).max(50).regex(/^[a-zA-Z0-9_-]+$/, 'Solo letras, números, guiones y underscores'),
   genres:         z.array(z.string().min(1)).min(1, 'Al menos un género'),
   bpmRange:       BpmRangeSchema,
   aesthetics:     z.array(z.string()).min(1, 'Al menos una estética'),

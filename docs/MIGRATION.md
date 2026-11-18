@@ -340,6 +340,10 @@ No reescribe el historial de §1–§7.
   exista, pertenezca al usuario y al perfil, y esté activa.
 - La personalidad de Pixel vive en `packages/shared-types/src/pixel.ts` y la
   consumen API y Web; se borraron las copias duplicadas.
+- La simulación CPU de Music Lab ejecuta síntesis y escritura en
+  `asyncio.to_thread`, para no bloquear el event loop mientras atiende el
+  polling de jobs largos. El cliente de la API usa un timeout de polling de al
+  menos 60 s por petición, independiente del timeout de espera total.
 - `JobManager` de Music Lab aplica TTL configurable (24 h por defecto), tope de
   jobs y limpieza periódica. Al expirar, borra el audio solo si está dentro de
   `MUSIC_LAB_OUTPUT_DIR`.
@@ -359,24 +363,50 @@ No reescribe el historial de §1–§7.
   conservan por compatibilidad, pero no gobiernan autorización ni facturación.
 - Los campos JSON siguen como `String` (decisión de §3.5; no se tocó en esta
   rama).
+- El reset local sobre PostgreSQL 16 aplicó ambas migraciones; `migrate status`
+  quedó limpio y `migrate diff --from-migrations` devolvió
+  “No difference detected”. El esquema resultante tiene `passwordHash` como
+  única credencial y `generationsLimit` con default 3.
+- `--shadow-database-url` debe apuntar a una base desechable, nunca a la base
+  principal: Prisma la reinicia durante el diff y puede borrar
+  `_prisma_migrations`. Si eso ocurre, se recupera el historial con
+  `prisma migrate resolve --applied <migración>` sin tocar los datos.
 
 ### 8.5 CI e infraestructura local
 
 - `.github/workflows/ci.yml` define dos jobs:
-  - TypeScript: PostgreSQL 16, `prisma migrate deploy`, `typecheck`, tests de
-    API y build de Web.
+  - TypeScript: PostgreSQL 16, `prisma migrate deploy`, `typecheck`, `lint`,
+    tests de API y build de Web.
   - Music Lab: Python 3.11 con `requirements.txt` y `pytest`.
 - `docker-compose.yml` levanta PostgreSQL 16 para desarrollo con volumen y
   healthcheck. Las credenciales coinciden con `.env.example` y no son de
   producción.
 - `apps/api/scripts/e2e-audio.mjs` prueba el flujo real en simulación:
   registro → login → `/music/generate` → polling → descarga del WAV.
+- `apps/api/scripts/create-admin.ts` crea o promueve un ADMIN idempotente por
+  email, con `role=ADMIN`, tier `ENTERPRISE`, generaciones ilimitadas y
+  `storageLimit` máximo. Se ejecuta con `make admin-create`.
 
-### 8.6 Verificación real
+### 8.6 Bootstrap de ADMIN
+
+- `make admin-create` lee `ADMIN_EMAIL`, `ADMIN_ALIAS` y `ADMIN_PASSWORD`
+  (mínimo 12 caracteres), carga `apps/api/.env`, hashea con scrypt y hace
+  `upsert` por email.
+- La cuenta resultante tiene `role=ADMIN`, `subscriptionTier=ENTERPRISE`,
+  `generationsLimit=UNLIMITED_GENERATIONS`, `storageLimit` máximo de
+  ENTERPRISE, email verificado y cuenta activa.
+- `QuotaService` omite el bloqueo de cuota para ADMIN cuando
+  `ADMIN_UNLIMITED=true`; el uso mensual se sigue incrementando.
+- Verificado en local: login correcto, `/auth/me` con límite 2147483647 y 4
+  generaciones consecutivas en `simulation` sin bloqueo. La cuenta de prueba se
+  dejó limpia (sin perfil ni generaciones) y con el contador en 0.
+
+### 8.7 Verificación real
 
 Ejecutado en el host de la rama:
 
 - `pnpm typecheck`: OK.
+- `pnpm --filter @son1k/api lint`: OK, sin errores ni warnings.
 - `pnpm --filter @son1k/api test`: 6 archivos, 31 tests aprobados.
 - `services/music-lab`: `pytest -q`, 21 tests aprobados.
 - `prisma migrate deploy` sobre PostgreSQL 16 temporal: ambas migraciones
@@ -393,6 +423,13 @@ Ejecutado en el host de la rama:
   sesión.
 - `POST /orchestrate-coherent` sin letra responde 400 `VALIDATION_ERROR`
   (antes era un 500 genérico).
+- Smoke test de ADMIN `Nov4-ix`: login, `/auth/me`, perfil, 4 generaciones
+  `simulation` (WAV PCM 16 bit 44.1 kHz), sesión, `orchestrate-coherent`
+  (artefacto `audio_url`, WAV de 31.7 MB), cierre de sesión y 409
+  `SESSION_NOT_ACTIVE` al reutilizarla.
+- Se corrigió el bloqueo del event loop de `simulation` con
+  `asyncio.to_thread`; el job coherente de 180 s terminó en ~10 s y el polling
+  dejó de agotar el timeout de 15 s.
 - `/v1/capabilities` expone solo `simulation` y `ace-step`; `engine=heartmula`
   se rechaza con 400 en la API y 422 en Music Lab.
 - `make -n` de todos los targets validado con una copia local de GNU Make

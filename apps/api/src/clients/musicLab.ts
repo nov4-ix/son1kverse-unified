@@ -122,6 +122,7 @@ export interface MusicLabDownload {
 export interface MusicLabWaitOptions {
   timeoutMs?: number
   pollIntervalMs?: number
+  requestTimeoutMs?: number
 }
 
 export interface MusicLabClientOptions {
@@ -223,8 +224,12 @@ export class MusicLabClient {
     })
   }
 
-  async getJob(jobId: string): Promise<MusicLabJob> {
-    return this.requestJson<MusicLabJob>(`/v1/jobs/${encodeURIComponent(jobId)}`)
+  async getJob(jobId: string, timeoutMs?: number): Promise<MusicLabJob> {
+    return this.requestJson<MusicLabJob>(
+      `/v1/jobs/${encodeURIComponent(jobId)}`,
+      undefined,
+      timeoutMs,
+    )
   }
 
   async getAudio(jobId: string, stem?: MusicLabStem): Promise<MusicLabDownload> {
@@ -248,10 +253,11 @@ export class MusicLabClient {
   async waitForJob(jobId: string, options: MusicLabWaitOptions = {}): Promise<MusicLabJob> {
     const timeoutMs = options.timeoutMs ?? 10 * 60_000
     const pollIntervalMs = options.pollIntervalMs ?? 1_000
+    const requestTimeoutMs = options.requestTimeoutMs ?? Math.max(this.timeoutMs, 60_000)
     const startedAt = Date.now()
 
     while (Date.now() - startedAt < timeoutMs) {
-      const job = await this.getJob(jobId)
+      const job = await this.getJob(jobId, requestTimeoutMs)
       if (job.status === 'succeeded') return job
       if (job.status === 'failed') {
         const error = job.error
@@ -290,8 +296,12 @@ export class MusicLabClient {
     return job.result
   }
 
-  private async requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await this.send(path, init)
+  private async requestJson<T>(
+    path: string,
+    init?: RequestInit,
+    timeoutMs?: number,
+  ): Promise<T> {
+    const response = await this.send(path, init, timeoutMs)
     const body = await this.readJson(response)
     if (!response.ok) {
       const payload = parseErrorPayload(body)
