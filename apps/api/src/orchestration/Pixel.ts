@@ -20,7 +20,7 @@ import type { IOrchestrator } from '../core/interfaces.js'
 import type { CreativeResult, OrchestrationRequest } from '../core/types.js'
 import type { FeedbackDTO } from '../core/contracts.js'
 import { AgentType, ArtifactType, MemoryType, ProviderType } from '../core/types.js'
-import { ProfileNotFoundError } from '../core/errors.js'
+import { ProfileNotFoundError, ValidationError } from '../core/errors.js'
 import { eventBus, SystemEvent } from '../core/events.js'
 import { AnalysisService } from '../analysis/AnalysisService.js'
 import { IdentityService } from '../identity/IdentityService.js'
@@ -493,7 +493,7 @@ export class Pixel implements IOrchestrator {
 
       const songLyrics = (lyrics ?? '').trim()
       if (!songLyrics) {
-        throw new Error('Se requiere letra aprobada para generar una canción coherente')
+        throw new ValidationError({ lyrics: ['La letra aprobada es obligatoria'] })
       }
 
       // ─── 3. Una sola llamada single-shot: la letra estructurada y los

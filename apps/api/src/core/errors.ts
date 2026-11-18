@@ -37,6 +37,12 @@ export class SessionNotFoundError extends Son1kverseError {
   }
 }
 
+export class SessionNotActiveError extends Son1kverseError {
+  constructor(id: string) {
+    super(`Session is not active: ${id}`, 'SESSION_NOT_ACTIVE', 409)
+  }
+}
+
 export class ArtifactNotFoundError extends Son1kverseError {
   constructor(id: string) {
     super(`Artifact not found: ${id}`, 'ARTIFACT_NOT_FOUND', 404)

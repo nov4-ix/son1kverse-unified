@@ -334,6 +334,10 @@ No reescribe el historial de §1–§7.
 - Se eliminaron las rutas `/audio/*`. La descarga de audio de Pixel usa
   `GET /api/v1/artifacts/:artifactId/audio`, con verificación de dueño y ruta
   confinada a `output/tracks/`.
+- `POST /api/v1/sessions`, `GET /api/v1/sessions/:id` y
+  `POST /api/v1/sessions/:id/close` crean, consultan y cierran sesiones con el
+  `userId` del JWT y ownership del perfil. `/orchestrate*` exige que la sesión
+  exista, pertenezca al usuario y al perfil, y esté activa.
 - La personalidad de Pixel vive en `packages/shared-types/src/pixel.ts` y la
   consumen API y Web; se borraron las copias duplicadas.
 - `JobManager` de Music Lab aplica TTL configurable (24 h por defecto), tope de
@@ -373,7 +377,7 @@ No reescribe el historial de §1–§7.
 Ejecutado en el host de la rama:
 
 - `pnpm typecheck`: OK.
-- `pnpm --filter @son1k/api test`: 5 archivos, 21 tests aprobados.
+- `pnpm --filter @son1k/api test`: 6 archivos, 31 tests aprobados.
 - `services/music-lab`: `pytest -q`, 21 tests aprobados.
 - `prisma migrate deploy` sobre PostgreSQL 16 temporal: ambas migraciones
   aplicadas.
@@ -382,6 +386,13 @@ Ejecutado en el host de la rama:
 - `POST /orchestrate-coherent` con proveedor LLM local simulado + Music Lab en
   `simulation`: artefacto `audio_url`, descarga autenticada 200 y 401 sin
   token.
+- Flujo de sesiones contra PostgreSQL real: `POST /sessions`, luego
+  `POST /orchestrate-coherent` con esa sesión, descarga 200 (WAV PCM 44.1 kHz),
+  `close` y `status=completed`; orquestar después devuelve 409
+  `SESSION_NOT_ACTIVE` y un usuario ajeno recibe 403 al crear o consultar la
+  sesión.
+- `POST /orchestrate-coherent` sin letra responde 400 `VALIDATION_ERROR`
+  (antes era un 500 genérico).
 - `/v1/capabilities` expone solo `simulation` y `ace-step`; `engine=heartmula`
   se rechaza con 400 en la API y 422 en Music Lab.
 - `make -n` de todos los targets validado con una copia local de GNU Make

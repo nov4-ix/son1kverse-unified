@@ -13,6 +13,7 @@ import { orchestrateRoutes } from './routes/orchestrate.js'
 import { profileRoutes } from './routes/profile.js'
 import { memoryRoutes } from './routes/memory.js'
 import { musicRoutes } from './routes/music.js'
+import { sessionRoutes } from './routes/sessions.js'
 
 const PUBLIC_API_PATHS = new Set([
   '/api/v1/auth/register',
@@ -104,6 +105,7 @@ export async function buildServer() {
   await app.register(profileRoutes,     { prefix: '/api/v1' })
   await app.register(memoryRoutes,      { prefix: '/api/v1' })
   await app.register(musicRoutes,       { prefix: '/api/v1' })
+  await app.register(sessionRoutes,     { prefix: '/api/v1' })
 
   return app
 }

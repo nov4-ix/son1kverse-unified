@@ -3,13 +3,27 @@
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { OrchestrationRequestSchema, FeedbackSchema, successResponse } from '../../core/contracts.js'
-import { ForbiddenError, NotFoundError, ValidationError } from '../../core/errors.js'
+import {
+  CoherentOrchestrationSchema,
+  FeedbackSchema,
+  OrchestrationRequestSchema,
+  successResponse,
+} from '../../core/contracts.js'
+import {
+  ForbiddenError,
+  NotFoundError,
+  SessionNotActiveError,
+  SessionNotFoundError,
+  ValidationError,
+} from '../../core/errors.js'
+import { SessionStatus } from '../../core/types.js'
 import { Pixel } from '../../orchestration/Pixel.js'
 import { prisma } from '../../storage/client.js'
+import { SessionService } from '../../sessions/SessionService.js'
 import { getAuthUserId } from '../request-auth.js'
 
 const pixel = new Pixel()
+const sessions = new SessionService()
 
 async function assertProfileOwner(profileId: string, userId: string): Promise<void> {
   const profile = await prisma.artistProfile.findUnique({
@@ -20,6 +34,20 @@ async function assertProfileOwner(profileId: string, userId: string): Promise<vo
   if (profile.userId !== userId) throw new ForbiddenError()
 }
 
+async function assertSessionUsable(
+  sessionId: string,
+  profileId: string,
+  userId: string,
+): Promise<void> {
+  const session = await sessions.getSession(sessionId)
+  if (session === null) throw new SessionNotFoundError(sessionId)
+  if (session.userId !== userId) throw new ForbiddenError()
+  if (session.profileId !== profileId) {
+    throw new ValidationError({ sessionId: ['La sesión no pertenece al perfil indicado'] })
+  }
+  if (session.status !== SessionStatus.ACTIVE) throw new SessionNotActiveError(sessionId)
+}
+
 export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
   // POST /api/v1/orchestrate — el flujo principal de Pixel
   app.post('/orchestrate', async (req, reply) => {
@@ -28,6 +56,7 @@ export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
 
     const userId = getAuthUserId(req)
     await assertProfileOwner(parsed.data.profileId, userId)
+    await assertSessionUsable(parsed.data.sessionId, parsed.data.profileId, userId)
 
     const result = await pixel.orchestrate(parsed.data)
     return reply.status(200).send(successResponse(result))
@@ -36,11 +65,12 @@ export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
   // POST /api/v1/orchestrate-coherent — canción completa en una sola llamada
   // single-shot a Music Lab con la letra estructurada y los style tags de Pixel.
   app.post('/orchestrate-coherent', async (req, reply) => {
-    const parsed = OrchestrationRequestSchema.safeParse(req.body)
+    const parsed = CoherentOrchestrationSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
 
     const userId = getAuthUserId(req)
     await assertProfileOwner(parsed.data.profileId, userId)
+    await assertSessionUsable(parsed.data.sessionId, parsed.data.profileId, userId)
 
     const result = await pixel.orchestrateCoherentSong(parsed.data)
     return reply.status(200).send(successResponse(result))

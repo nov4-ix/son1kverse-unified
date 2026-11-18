@@ -106,6 +106,11 @@ export const OrchestrationRequestSchema = z.object({
 
 export type OrchestrationRequestDTO = z.infer<typeof OrchestrationRequestSchema>
 
+// La canción coherente siempre parte de una letra ya aprobada por el artista.
+export const CoherentOrchestrationSchema = OrchestrationRequestSchema.extend({
+  lyrics: z.string().min(1, 'La letra aprobada es obligatoria'),
+})
+
 export const AudioGenerateRequestSchema = z.object({
   genre:            z.string().min(1),
   mood:             z.string().min(1),
