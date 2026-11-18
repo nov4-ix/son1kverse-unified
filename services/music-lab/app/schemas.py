@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class EngineName(StrEnum):
     SIMULATION = "simulation"
     ACE_STEP = "ace-step"
-    HEARTMULA = "heartmula"
 
 
 class OutputFormat(StrEnum):

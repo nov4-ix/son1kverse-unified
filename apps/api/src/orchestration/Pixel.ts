@@ -299,9 +299,8 @@ export class Pixel implements IOrchestrator {
     }
   }
 
-  private toMusicLabEngine(engine: 'heartmula' | 'ace_step' | undefined): MusicLabEngine | undefined {
+  private toMusicLabEngine(engine: 'ace_step' | undefined): MusicLabEngine | undefined {
     if (engine === 'ace_step') return 'ace-step'
-    if (engine === 'heartmula') return 'heartmula'
     return undefined
   }
 

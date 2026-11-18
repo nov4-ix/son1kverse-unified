@@ -191,8 +191,8 @@ export type OrchestrationRequest = {
     // Audio: duración e idioma del track cuando el agente MUSIC dispara el motor
     durationSeconds?: number | undefined
     language?:        string | undefined
-    // Selección de motor de generación (Fase 2 - ACE-Step)
-    engine?:          'heartmula' | 'ace_step' | undefined
+    // Motor de generación GPU: solo ACE-Step.
+    engine?:          'ace_step' | undefined
   } | undefined
 }
 

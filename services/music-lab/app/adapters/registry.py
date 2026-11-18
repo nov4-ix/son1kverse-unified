@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from app.adapters.ace_step import AceStepAdapter
 from app.adapters.base import AudioGeneratorInterface
-from app.adapters.heartmula import HeartMuLaAdapter
 from app.adapters.simulation import SimulationAdapter
 from app.config import Settings, get_settings
 from app.errors import EngineUnavailableError
@@ -29,7 +28,6 @@ class AdapterRegistry:
         self._adapters: dict[EngineName, AudioGeneratorInterface] = {
             EngineName.SIMULATION: SimulationAdapter(self._settings),
             EngineName.ACE_STEP: AceStepAdapter(self._settings),
-            EngineName.HEARTMULA: HeartMuLaAdapter(self._settings),
         }
 
     def get(self, engine: EngineName) -> AudioGeneratorInterface:
@@ -66,12 +64,6 @@ class AdapterRegistry:
                 mode=EngineName.ACE_STEP,
                 requested_engine=None,
             )
-        if mode == EngineName.HEARTMULA.value:
-            return Selection(
-                adapter=self._adapters[EngineName.HEARTMULA],
-                mode=EngineName.HEARTMULA,
-                requested_engine=None,
-            )
         if mode != "auto":
             raise EngineUnavailableError(
                 "Unknown MUSIC_LAB_MODE",
@@ -81,7 +73,7 @@ class AdapterRegistry:
 
     async def _select_auto(self) -> Selection:
         checked: dict[str, str] = {}
-        for engine in (EngineName.ACE_STEP, EngineName.HEARTMULA):
+        for engine in (EngineName.ACE_STEP,):
             health = await self._adapters[engine].health()
             if health.ready:
                 return Selection(

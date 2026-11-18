@@ -151,10 +151,23 @@ def test_unsupported_operation_fails_in_job(tmp_path: Path) -> None:
             job = await submit_and_wait(
                 client,
                 "/v1/stems",
-                {"prompt": "x", "duration_s": 0.5, "engine": "heartmula"},
+                {"prompt": "x", "duration_s": 0.5, "engine": "ace-step"},
             )
             assert job["status"] == "failed"
             assert job["error"]["code"] == "NOT_SUPPORTED"
+
+    run(scenario())
+
+
+def test_heartmula_engine_is_no_longer_accepted(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with make_client(settings(tmp_path)) as (_, client):
+            response = await client.post(
+                "/v1/generate",
+                json={"prompt": "x", "duration_s": 0.5, "engine": "heartmula"},
+            )
+            assert response.status_code == 422
+            assert response.json()["code"] == "INVALID_REQUEST"
 
     run(scenario())
 

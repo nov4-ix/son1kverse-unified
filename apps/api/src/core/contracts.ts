@@ -130,9 +130,8 @@ export const AudioGenerateRequestSchema = z.object({
   section_emotion:  z.string().optional(),     // melancholic, energetic, calm...
   section_energy:   z.number().min(0).max(1).optional(), // 0.0 - 1.0
 
-  // Selección de motor de generación (Fase 2 - ACE-Step)
-  // 'heartmula' (por defecto) o 'ace_step' para base musical extrema velocidad
-  engine:           z.enum(['heartmula', 'ace_step']).optional().default('heartmula'),
+  // Motor de generación: ACE-Step es el único motor GPU soportado.
+  engine:           z.literal('ace_step').optional().default('ace_step'),
 })
 
 export type AudioGenerateRequestDTO = z.infer<typeof AudioGenerateRequestSchema>

@@ -34,7 +34,7 @@ const MusicLabGenerateSchema = z.object({
   reference_audio_path: z.string().nullable().optional(),
   output_format:        z.enum(['wav', 'mp3']).default('wav'),
   master:               z.boolean().default(false),
-  engine:               z.enum(['simulation', 'ace-step', 'heartmula']).nullable().optional(),
+  engine:               z.enum(['simulation', 'ace-step']).nullable().optional(),
 })
 
 const MusicLabRepaintSchema = MusicLabGenerateSchema.extend({

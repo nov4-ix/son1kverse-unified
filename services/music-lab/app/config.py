@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ServiceMode = Literal["simulation", "ace-step", "heartmula", "auto"]
+ServiceMode = Literal["simulation", "ace-step", "auto"]
 
 
 class Settings(BaseSettings):
@@ -55,15 +55,6 @@ class Settings(BaseSettings):
     ace_step_shift: float = Field(default=3.0, gt=0, le=5)
     ace_step_vocal_language: str = "unknown"
 
-    heartmula_ckpt_dir: Path = Path("/models/heartmula")
-    heartmula_version: str = "3B"
-    heartmula_device: str = "cuda"
-    heartmula_dtype: str = "bfloat16"
-    heartmula_lazy_load: bool = True
-    heartmula_python_module: str = "heartlib"
-    heartmula_temperature: float = 1.0
-    heartmula_topk: int = 50
-    heartmula_cfg_scale: float = 1.5
 
     def ensure_output_dir(self) -> Path:
         self.music_lab_output_dir.mkdir(parents=True, exist_ok=True)

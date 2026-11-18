@@ -2,7 +2,7 @@ import { FREE_GENERATIONS_PER_MONTH } from '@son1k/shared-types'
 
 const API_PREFIX = '/api/v1'
 
-export type EngineName = 'simulation' | 'ace-step' | 'heartmula'
+export type EngineName = 'simulation' | 'ace-step'
 export type OutputFormat = 'wav' | 'mp3'
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed'
 export type MusicOperation = 'generate' | 'repaint' | 'cover' | 'stems'

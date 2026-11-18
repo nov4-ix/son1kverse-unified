@@ -59,6 +59,23 @@ MUSIC_LAB_API_KEY=<la-misma-clave-que-el-servicio>
    arranque.
 4. Expón el puerto 8002 y usa la URL del webhook/túnel como `MUSIC_LAB_URL`.
 
+## Fine-tuning de ACE-Step (roadmap)
+
+El objetivo es adaptar ACE-Step al catálogo de SON1KVERSE sin cambiar el
+contrato de Music Lab. El adapter ya acepta cualquier checkpoint compatible
+montado en `ACE_STEP_MODEL_PATH`; no hay entrenamiento dentro del servicio.
+
+1. Fine-tunear ACE-Step 1.5 fuera del servicio con el dataset propio.
+2. Publicar el checkpoint con la estructura esperada
+   (`acestep-v15-*/` + `vae/`) dentro de `/models/ace-step`.
+3. Ajustar `ACE_STEP_CONFIG_PATH` al nombre del checkpoint fine-tuneado.
+4. Poner `ACE_STEP_AUTO_DOWNLOAD=false` para no descargar el modelo base.
+5. Verificar `GET /health` y `GET /v1/capabilities` antes de generar.
+
+Estado actual: no existe endpoint de entrenamiento ni carga dinámica de LoRA.
+El servicio solo consume checkpoints ya entrenados; añadir LoRA requerirá
+actualizar `acestep` y el adapter de forma explícita.
+
 ## Google Colab
 
 `scripts/colab_run.sh` instala las dependencias, levanta uvicorn en `:8002` y

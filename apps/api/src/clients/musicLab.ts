@@ -4,7 +4,7 @@
 
 import { config } from '../config/index.js'
 
-export type MusicLabEngine = 'simulation' | 'ace-step' | 'heartmula'
+export type MusicLabEngine = 'simulation' | 'ace-step'
 export type MusicLabOutputFormat = 'wav' | 'mp3'
 export type MusicLabJobStatus = 'queued' | 'running' | 'succeeded' | 'failed'
 export type MusicLabStem = 'drums' | 'bass' | 'other'
