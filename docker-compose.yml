@@ -1,0 +1,23 @@
+# PostgreSQL local para desarrollo. Las credenciales coinciden con
+# .env.example (DATABASE_URL por defecto) y NO son para producción.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: son1kverse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: son1kverse
+      POSTGRES_PASSWORD: son1kverse
+      POSTGRES_DB: son1kverse
+    ports:
+      - "5432:5432"
+    volumes:
+      - son1kverse_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U son1kverse -d son1kverse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  son1kverse_pgdata:

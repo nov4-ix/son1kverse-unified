@@ -7,13 +7,6 @@ import { useStudio } from '../context/StudioContext'
 import { useSystemMode } from '../context/SystemModeContext'
 import { orchestrateAandR } from '../lib/pixelAandR'
 
-const ARCHIVE = [
-  { title: 'Ecos del Futuro', artist: 'Sila424', plays: '2.4K', duration: '3:24' },
-  { title: 'Resonancia Digital', artist: 'CreadorX', plays: '1.8K', duration: '3:08' },
-  { title: 'Fragmentos de Luz', artist: 'SonidoIA', plays: '2.1K', duration: '3:42' },
-  { title: 'Imperfección Perfecta', artist: 'VanguardBeats', plays: '4.5K', duration: '3:55' },
-] as const
-
 const PLANS = SUBSCRIPTION_PLANS
 
 export function ClassicHubView() {
@@ -111,16 +104,12 @@ export function ClassicHubView() {
         <section id="archivo" className="space-y-6">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-2xl font-bold text-white">El Archivo</h2>
-            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-amber-300">Vista de demostración</span>
+            <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-zinc-400">Sin lanzamientos</span>
           </div>
-          <p className="font-mono text-[11px] text-zinc-500">Estas piezas son ejemplos ficticios de la interfaz. Tus lanzamientos reales viven en tu credencial ALVAE.</p>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {ARCHIVE.map((item) => (
-              <div key={item.title} className="overflow-hidden rounded-xl border border-white/10 bg-[#121722]">
-                <div className="h-28 bg-gradient-to-br from-emerald-500/30 via-teal-600/20 to-slate-900" />
-                <div className="p-4"><div className="font-semibold text-white">{item.title}</div><div className="text-xs text-zinc-400">{item.artist} · {item.plays} · {item.duration}</div></div>
-              </div>
-            ))}
+          <div className="rounded-xl border border-dashed border-white/15 bg-[#121722] px-6 py-12 text-center space-y-3">
+            <p className="font-mono text-sm text-zinc-300">Todavía no hay lanzamientos en tu archivo.</p>
+            <p className="mx-auto max-w-lg font-mono text-[11px] text-zinc-500">Cuando generes una canción aparecerá aquí con su audio real. No mostramos piezas de ejemplo como si fueran tuyas.</p>
+            <button type="button" onClick={() => setView('generator')} className="rounded-lg border border-[#D4A359]/40 bg-[#D4A359]/10 px-4 py-2 font-mono text-xs text-[#D4A359]">Abrir el generador</button>
           </div>
         </section>
         <section className="rounded-2xl border border-emerald-500/30 bg-[#121722] p-8 text-center space-y-4">

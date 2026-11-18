@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "fix/**"]
+  pull_request:
+
+jobs:
+  quality:
+    name: TypeScript, migraciones y tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: son1kverse
+          POSTGRES_PASSWORD: son1kverse
+          POSTGRES_DB: son1kverse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U son1kverse -d son1kverse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://son1kverse:son1kverse@localhost:5432/son1kverse?schema=public
+      JWT_SECRET: ci-only-secret-0123456789-0123456789-abcdef
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @son1k/db build
+      - run: pnpm --filter @son1k/shared-types build
+      - run: pnpm --filter @son1k/db exec prisma migrate deploy
+      - run: pnpm typecheck
+      - run: pnpm --filter @son1k/api test
+      - run: pnpm --filter @son1k/web build
+
+  music-lab:
+    name: Music Lab (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/music-lab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/music-lab/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: pytest -q

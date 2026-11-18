@@ -9,7 +9,7 @@ Monorepo unificado que consolida la arquitectura backend, el motor neuronal de s
 - **`apps/web`** (`@son1k/web`): Frontend React 18 + Vite + Tailwind CSS con dualidad de modos (`Ctrl + Alt + H` / `ctrl+alt=Security` → `ctrl+ALT=humanity`), logotipo oficial SVG, simbología **ALVAE (`◯⚡`)**, **La Terminal** con **Pixel A&R Digital** autónomo, **4 Perillas Literarias + Quinto Acorde**, **Ghost Studio** y **El Santuario**.
 - **`apps/api`** (`@son1k/api`): Backend Fastify + TypeScript ESM strict con orquestación de agentes (`MusicAgent`, `LyricsAgent`, `StrategyAgent`, `VisualAgent`), identidad de **Pixel** como sistema nervioso central y cliente tipado hacia Music Lab.
 - **`packages/db`** (`@son1k/db`): Esquema PostgreSQL unificado en Prisma (`User`, `ArtistProfile`, `Memory`, `AlvaeAccount`, `Generation`, `Track`, `Project`).
-- **`packages/shared-types`** (`@son1k/shared-types`): Planes, límites de generación y almacenamiento compartidos por API y Web.
+- **`packages/shared-types`** (`@son1k/shared-types`): Planes, límites de generación/almacenamiento y personalidad de Pixel compartidos por API y Web.
 - **`packages/shared-ui`** (`@son1k/shared-ui`): Componentes vectoriales oficiales (`PlatformLogo`, `AlvaeSymbol`) y controles táctiles (`LiteraryKnob`).
 - **`services/music-lab`**: Microservicio Python 3.11–3.13 + FastAPI aislado para generación de audio soberana (sin dependencias de APIs de terceros):
   - **Motores neuronales:** Adaptadores perezosos para **ACE-Step 1.5** (generación completa, *repainting*, *covers* y *stems*) y **HeartMuLa**.
@@ -27,6 +27,7 @@ Monorepo unificado que consolida la arquitectura backend, el motor neuronal de s
 
 ```bash
 # 1. PostgreSQL debe estar corriendo y la base debe existir.
+#    Si no tienes PostgreSQL local: make db-up (requiere Docker).
 #    Ajusta DATABASE_URL en apps/api/.env si no usas los valores por defecto.
 
 # 2. Instalar Node + Python, crear apps/api/.env y generar JWT_SECRET.
@@ -61,6 +62,7 @@ El proxy de Vite usa `VITE_API_PROXY_TARGET` (default `http://localhost:3001`).
 - `make typecheck` — Validación estricta de TypeScript (`tsc --noEmit`) en todo el workspace.
 - `make build` — Compilación de producción de todos los paquetes y aplicaciones.
 - `make test` — Tests de la API (Vitest) y de Music Lab (pytest).
+- `make db-up` / `make db-down` — PostgreSQL de desarrollo con `docker-compose.yml` (opcional).
 - `make db-validate` / `make db-generate` — Validación y generación del cliente Prisma.
 - `make db-migrate` / `make db-status` — Migraciones y estado en PostgreSQL.
 - `make lab-test` — Ejecuta la suite `pytest` de `services/music-lab` en CPU.

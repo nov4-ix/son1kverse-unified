@@ -280,3 +280,109 @@ Fuentes de solo lectura:
 - Ghost Studio no inventa audio: el `source_audio_path` sale de `result.audio_path` del último job `succeeded`.
 - Nova Post Pilot no llama a un CRUD inexistente: registra lanzamientos locales sobre el WAV real del job.
 - Si el usuario no tiene fila `AlvaeAccount`, la credencial lo declara (`sin credencial`) en lugar de fabricar un tier.
+
+## 8. Hardening v1 — rama `fix/hardening-v1`
+
+Esta sección cierra los pendientes de §5 y documenta el estado real de la rama.
+No reescribe el historial de §1–§7.
+
+> Nota de §5: `passwordHash`, la fuente de verdad de `stripeCustomerId` y las
+> migraciones versionadas quedaron resueltos aquí. La personalidad de Pixel de
+> §3.8 vive ahora en `packages/shared-types/src/pixel.ts`.
+
+### 8.1 Autenticación, propiedad y cuotas
+
+- JWT obligatorio en `/api/v1/*` salvo `/auth/register`, `/auth/login`,
+  `/health` y `/music/health`. `ALLOW_ANON_DEV` solo aplica en desarrollo y se
+  ignora con `NODE_ENV=production`.
+- Registro/login con rate limit de 10 peticiones por minuto.
+- Propiedad verificada en perfiles, memoria, artefactos, feedback y jobs. Un
+  job de Music Lab se resuelve contra `Generation.externalJobId`; no se acepta
+  un `jobId` ajeno aunque el cliente lo conozca.
+- Cuotas atómicas con `UPDATE ... WHERE generationsUsedThisMonth < limit` y
+  `ADMIN_UNLIMITED` configurable. La cuota se devuelve si el job falla.
+- Contraseñas scrypt con formato `salt:hash` en una única columna
+  `User.passwordHash`.
+
+### 8.2 Arranque reproducible
+
+- Puertos únicos: API `3001`, Music Lab `8002`, Web `5173`.
+  `MUSIC_LAB_URL` apunta por defecto a `http://127.0.0.1:8002`, el proxy de
+  Vite y `colab_run.sh` usan los mismos valores.
+- `Makefile` con `setup`, `up`, `dev`, `db-migrate`, `db-status`, `db-up`,
+  `db-down`, `lab-test`, `test`, `typecheck` y `build`. `make setup` no
+  sobrescribe `apps/api/.env` y genera un `JWT_SECRET` aleatorio.
+- `pnpm typecheck` ejecuta `prisma generate` y `tsc --noEmit` en todo el
+  workspace.
+
+### 8.3 Motor único de audio
+
+- Se eliminaron `apps/api/audio_engine/`, `Dockerfile.audio-engine`,
+  `docker-compose.audio-engine.yml`, `AudioEngineClient`, los scripts de
+  despliegue GPU legacy y las variables `AUDIO_ENGINE_*` / `MUSICGEN_API_URL`.
+- `Pixel.orchestrate` y `Pixel.orchestrateCoherentSong` hablan solo con
+  `musicLabClient`. La canción coherente es single-shot: letra estructurada +
+  style tags → un job → un WAV. Se eliminó el job store en memoria y
+  `/coherent-status`.
+- Se eliminaron las rutas `/audio/*`. La descarga de audio de Pixel usa
+  `GET /api/v1/artifacts/:artifactId/audio`, con verificación de dueño y ruta
+  confinada a `output/tracks/`.
+- La personalidad de Pixel vive en `packages/shared-types/src/pixel.ts` y la
+  consumen API y Web; se borraron las copias duplicadas.
+- `JobManager` de Music Lab aplica TTL configurable (24 h por defecto), tope de
+  jobs y limpieza periódica. Al expirar, borra el audio solo si está dentro de
+  `MUSIC_LAB_OUTPUT_DIR`.
+- La API usa `pino` en lugar de `console.*` (el único `console.error` restante
+  es el fallo de configuración previo al logger).
+- El despliegue GPU está documentado en
+  `services/music-lab/DEPLOY_GPU_GUIDE.md`.
+
+### 8.4 Datos y migraciones
+
+- Migraciones versionadas: `20261117000000_init` y
+  `20261118000000_user_password_hash`.
+- `User.password` se renombró a `passwordHash`; el duplicado nullable de
+  SSV-BETA nunca se escribió y se eliminó.
+- `stripeCustomerId` queda solo en `User`; se eliminó de `AlvaeAccount`.
+- `AlvaeAccount`, `AlvaeRole` y `AlvaeTier` quedan marcados como LEGACY: se
+  conservan por compatibilidad, pero no gobiernan autorización ni facturación.
+- Los campos JSON siguen como `String` (decisión de §3.5; no se tocó en esta
+  rama).
+
+### 8.5 CI e infraestructura local
+
+- `.github/workflows/ci.yml` define dos jobs:
+  - TypeScript: PostgreSQL 16, `prisma migrate deploy`, `typecheck`, tests de
+    API y build de Web.
+  - Music Lab: Python 3.11 con `requirements.txt` y `pytest`.
+- `docker-compose.yml` levanta PostgreSQL 16 para desarrollo con volumen y
+  healthcheck. Las credenciales coinciden con `.env.example` y no son de
+  producción.
+- `apps/api/scripts/e2e-audio.mjs` prueba el flujo real en simulación:
+  registro → login → `/music/generate` → polling → descarga del WAV.
+
+### 8.6 Verificación real
+
+Ejecutado en el host de la rama:
+
+- `pnpm typecheck`: OK.
+- `pnpm --filter @son1k/api test`: 5 archivos, 20 tests aprobados.
+- `services/music-lab`: `pytest -q`, 20 tests aprobados.
+- `prisma migrate deploy` sobre PostgreSQL 16 temporal: ambas migraciones
+  aplicadas.
+- `e2e-audio.mjs` contra API + Music Lab en `simulation`: job `succeeded`,
+  WAV de ~2.0 MB y masterización a −14.02 LUFS.
+- `POST /orchestrate-coherent` con proveedor LLM local simulado + Music Lab en
+  `simulation`: artefacto `audio_url`, descarga autenticada 200 y 401 sin
+  token.
+- `make -n` de todos los targets validado con una copia local de GNU Make
+  (`make` no estaba instalado en el host).
+
+No ejecutado:
+
+- `docker compose up` y `docker build`: Docker no está instalado en el host de
+  verificación.
+- Motores ACE-Step y HeartMuLa reales: requieren GPU y pesos; solo se verificó
+  `simulation`.
+- GitHub Actions: el YAML no se ejecutó desde este entorno; queda para el
+  primer push a GitHub.

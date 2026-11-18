@@ -67,7 +67,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       data: {
         email,
         alias,
-        password: await hashPassword(password),
+        passwordHash: await hashPassword(password),
         subscriptionTier: tier,
         generationsLimit: generationLimitForTier(tier),
         storageLimit: BigInt(storageLimitForTier(tier)),
@@ -93,7 +93,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
 
     const user = await prisma.user.findUnique({ where: { email: parsed.data.email } })
-    if (!user || !(await verifyPassword(parsed.data.password, user.password))) {
+    if (!user || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
       throw new InvalidCredentialsError()
     }
 

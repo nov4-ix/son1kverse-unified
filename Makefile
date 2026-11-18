@@ -5,7 +5,7 @@ API_PORT ?= 3001
 MUSIC_LAB_PORT ?= 8002
 WEB_PORT ?= 5173
 
-.PHONY: help setup env up dev api-dev web-dev lab-setup lab-dev lab-test lab-openapi lab-docker-gpu typecheck build test db-validate db-generate db-migrate db-status web-build
+.PHONY: help setup env up dev api-dev web-dev lab-setup lab-dev lab-test lab-openapi lab-docker-gpu typecheck build test db-up db-down db-validate db-generate db-migrate db-status web-build
 
 help:
 	@echo "SON1KVERSE — comandos disponibles"
@@ -15,6 +15,8 @@ help:
 	@echo "  make test        Ejecuta tests de API y Music Lab"
 	@echo "  make typecheck   tsc --noEmit en todo el workspace"
 	@echo "  make build       Build de producción de paquetes y apps"
+	@echo "  make db-up       Levanta PostgreSQL de desarrollo con docker compose"
+	@echo "  make db-down     Detiene el PostgreSQL de docker compose"
 	@echo "  make db-migrate  Aplica migraciones Prisma (requiere PostgreSQL)"
 	@echo "  make db-status   Muestra el estado de migraciones Prisma"
 
@@ -73,6 +75,12 @@ build:
 test:
 	pnpm --filter @son1k/api test
 	$(MAKE) lab-test
+
+db-up:
+	docker compose up -d db
+
+db-down:
+	docker compose down
 
 db-validate:
 	pnpm --filter @son1k/db prisma:validate
