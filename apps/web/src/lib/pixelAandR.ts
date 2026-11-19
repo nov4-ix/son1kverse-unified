@@ -1,4 +1,4 @@
-import type { LiteraryKnobs } from './pixelPersonality'
+import type { LiteraryKnobs } from '@son1k/shared-types'
 import { traducirPerillas, type Estilo } from './perillasDictionary'
 
 export type AandRDirection = {

@@ -17,10 +17,6 @@ coverage/
 **/*.key
 
 # ─── Motor de audio: pesos y entorno (≈23 GB) — jamás al repo ────────────────
-audio_engine/venv/
-audio_engine/ckpt/
-audio_engine/outputs/
-audio_engine/**/__pycache__/
 *.safetensors
 
 # ─── Artefactos locales ───────────────────────────────────────────────────────

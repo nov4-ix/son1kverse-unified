@@ -9,10 +9,10 @@ No usa APIs externas de generación.
 |---|---|---|
 | `simulation` (default) | Síntesis determinista numpy | Ninguno (CPU) |
 | `ace-step` | ACE-Step 1.5 | CUDA + `acestep` + pesos |
-| `heartmula` | HeartMuLa + HeartCodec | CUDA + pesos + `heartlib` |
-| `auto` | ACE-Step → HeartMuLa → error | GPU disponible |
+| `auto` | ACE-Step → error | GPU disponible |
 
 `auto` nunca cae a simulation salvo `MUSIC_LAB_ALLOW_SIM_FALLBACK=true`.
+HeartMuLa fue retirado: su consumo de VRAM no es viable para este proyecto.
 
 ## Desarrollo (CPU)
 
@@ -26,6 +26,20 @@ Copia `.env.example` a `.env` si necesitas cambiar valores. En `simulation`
 no hace falta API key; si defines `MUSIC_LAB_API_KEY`, todas las rutas `/v1/*`
 exigen el header `x-api-key`.
 
+## Pipeline de audio
+
+Cada job de generación ejecuta, en este orden:
+
+1. Adaptador activo (`simulation` o ACE-Step 1.5).
+2. **HAM** (`app/ham`): analiza key, BPM, RMS y perfil espectral del audio
+   generado y los expone en `result.metadata.ham`.
+3. **MasteringChain** (`app/mastering`) solo si `master=true`: normaliza a
+   −14 LUFS, aplica EQ/limiter/fades y expone `result.metadata.mastering`.
+
+ACE-Step añade `result.metadata.compute` (`gpu_seconds`, `peak_vram_bytes`) para
+el plan de costos. La API Node registra esos valores junto al tier y la cuota
+del usuario en su log estructurado.
+
 ## ACE-Step 1.5 (GPU)
 
 El paquete oficial vive en GitHub (`acestep`, versión 1.5.0); el paquete
@@ -36,7 +50,7 @@ vendoriza `nano-vllm`, por eso se instala sin dependencias:
 pip install -r requirements.txt -r requirements-gpu.txt
 pip install --no-deps -r requirements-ace-step.txt
 export ACE_STEP_MODEL_PATH=/models/ace-step
-MUSIC_LAB_MODE=ace-step uvicorn app.main:app --host 0.0.0.0 --port 8001
+MUSIC_LAB_MODE=ace-step uvicorn app.main:app --host 0.0.0.0 --port 8002
 ```
 
 Con `ACE_STEP_AUTO_DOWNLOAD=true` los checkpoints se descargan de
@@ -46,7 +60,9 @@ mapea `prompt`, `lyrics`, `duration_s`, `bpm`, `key`, `seed` y `style_tags`.
 `ACE_STEP_USE_LM=false` (default) ejecuta solo el DiT; no requiere `nano-vllm`.
 
 En Google Colab: `bash scripts/colab_run.sh` instala todo, levanta el servicio
-en `:8001` y publica una URL `https://*.trycloudflare.com` sin cuenta ni token.
+en `:8002` y publica una URL `https://*.trycloudflare.com` sin cuenta ni token.
+El notebook `notebooks/colab_t4_ace_step.ipynb` automatiza el arranque en una
+T4 con `ACE_STEP_OFFLOAD=true`.
 
 ## API
 

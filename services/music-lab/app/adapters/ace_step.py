@@ -25,6 +25,7 @@ import importlib
 import os
 import re
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -291,6 +292,12 @@ class AceStepAdapter(AudioGeneratorInterface):
 
         raw_dir = output_path.parent / "ace-step-raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
+        use_cuda = wants_cuda(self._settings.ace_step_device) and cuda_available()
+        torch = importlib.import_module("torch") if use_cuda else None
+        if torch is not None:
+            torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
+        started_at = time.perf_counter()
         try:
             result = self._inference.generate_music(
                 self._dit_handler,
@@ -337,6 +344,13 @@ class AceStepAdapter(AudioGeneratorInterface):
         finally:
             shutil.rmtree(raw_dir, ignore_errors=True)
 
+        if torch is not None:
+            torch.cuda.synchronize()
+            peak_vram_bytes = int(torch.cuda.max_memory_reserved())
+        else:
+            peak_vram_bytes = 0
+        inference_seconds = round(time.perf_counter() - started_at, 3)
+
         audio_params = audio.get("params") or {}
         metadata = {
             "model": self._settings.ace_step_config_path,
@@ -354,6 +368,12 @@ class AceStepAdapter(AudioGeneratorInterface):
             "native_sample_rate": native_sr,
             "output_sample_rate": self._settings.music_lab_sample_rate,
             "requested_duration_s": req.duration_s,
+            "compute": {
+                "device": self._settings.ace_step_device,
+                "inference_seconds": inference_seconds,
+                "gpu_seconds": inference_seconds if torch is not None else None,
+                "peak_vram_bytes": peak_vram_bytes if torch is not None else None,
+            },
         }
         if operation == "repaint":
             metadata["repainting_start"] = params.repainting_start

@@ -1,6 +1,7 @@
 // ─── SON1KVERSE — Event Bus ───────────────────────────────────────────────────
 
 import type { AgentType, ArtistProfile, CreativeIntent, CreativeResult, PixelMoodId, ProviderType } from './types.js'
+import { logger } from '../lib/logger.js'
 
 export enum SystemEvent {
   ORCHESTRATION_STARTED   = 'orchestration:started',
@@ -92,7 +93,7 @@ export class EventBus {
     if (!set) return
     for (const handler of set) {
       Promise.resolve(handler(payload)).catch((err) =>
-        console.error(`[EventBus] Handler error on '${event}':`, err),
+        logger.error({ err, event }, 'EventBus handler error'),
       )
     }
   }

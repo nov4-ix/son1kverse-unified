@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ServiceMode = Literal["simulation", "ace-step", "heartmula", "auto"]
+ServiceMode = Literal["simulation", "ace-step", "auto"]
 
 
 class Settings(BaseSettings):
@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     music_lab_output_dir: Path = Path("outputs")
     music_lab_max_concurrency: int = Field(default=1, ge=1, le=8)
     music_lab_allow_sim_fallback: bool = False
+    # Retención de jobs en memoria. Al expirar se elimina el job y, si está
+    # dentro de MUSIC_LAB_OUTPUT_DIR, su audio. 0 desactiva el TTL.
+    music_lab_job_ttl_hours: float = Field(default=24.0, ge=0)
+    music_lab_max_jobs: int = Field(default=500, ge=1)
+    music_lab_job_cleanup_interval_s: float = Field(default=60.0, gt=0)
     music_lab_sample_rate: int = Field(default=44100, ge=8000, le=192000)
 
     sim_latency_ms: int = Field(default=0, ge=0, le=60_000)
@@ -50,15 +55,6 @@ class Settings(BaseSettings):
     ace_step_shift: float = Field(default=3.0, gt=0, le=5)
     ace_step_vocal_language: str = "unknown"
 
-    heartmula_ckpt_dir: Path = Path("/models/heartmula")
-    heartmula_version: str = "3B"
-    heartmula_device: str = "cuda"
-    heartmula_dtype: str = "bfloat16"
-    heartmula_lazy_load: bool = True
-    heartmula_python_module: str = "heartlib"
-    heartmula_temperature: float = 1.0
-    heartmula_topk: int = 50
-    heartmula_cfg_scale: float = 1.5
 
     def ensure_output_dir(self) -> Path:
         self.music_lab_output_dir.mkdir(parents=True, exist_ok=True)

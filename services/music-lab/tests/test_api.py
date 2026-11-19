@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
+import shutil
 from pathlib import Path
 from typing import Any
 
 import pytest
 import soundfile as sf
 
+from app.adapters.simulation import SimulationAdapter
 from app.audio import read_audio
 from app.config import Settings
+from app.ham.engine import SectionAnalysis
+from app.ham.key import KeyDetectionResult
+from app.ham.spectral import SpectralProfile
+from app.mastering import MasteringMetrics
 from tests.helpers import make_client, run, submit_and_wait
 
 
@@ -59,6 +66,15 @@ def test_generate_job_and_download(tmp_path: Path) -> None:
             audio, sample_rate = read_audio(Path(result["audio_path"]))
             assert sample_rate == 44100
             assert audio.shape[1] == pytest.approx(44100, abs=2)
+            ham = result["metadata"]["ham"]
+            assert set(ham) >= {
+                "analyzed_s",
+                "detected_key",
+                "detected_bpm",
+                "rms",
+                "spectral",
+            }
+            assert ham["analyzed_s"] == pytest.approx(1.0)
 
             download = await client.get(f"/v1/jobs/{job['job_id']}/audio")
             assert download.status_code == 200
@@ -126,6 +142,61 @@ def test_mastering_is_applied(tmp_path: Path) -> None:
     run(scenario())
 
 
+def test_pipeline_runs_ham_before_mastering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    class FakeAligner:
+        def __init__(self, sample_rate: int) -> None:
+            self.sample_rate = sample_rate
+
+        def analyze(self, audio: Any) -> SectionAnalysis:
+            calls.append("ham")
+            return SectionAnalysis(
+                key=KeyDetectionResult(9, "A", "minor", 0.9),
+                bpm=120.0,
+                bpm_confidence=0.8,
+                rms=0.1,
+                spectral=SpectralProfile(1000.0, 500.0, 2000.0, 0.3),
+            )
+
+    class FakeChain:
+        def __init__(self, sample_rate: int) -> None:
+            self.sample_rate = sample_rate
+
+        def master_file(
+            self, source: Path, target: Path, output_format: Any
+        ) -> tuple[Path, MasteringMetrics]:
+            calls.append("mastering")
+            shutil.copyfile(source, target)
+            return target, MasteringMetrics(-14.0, -14.0, 0.0, -1.0, -1.0, ["eq"])
+
+    monkeypatch.setattr("app.jobs.manager.HarmonicAligner", FakeAligner)
+    monkeypatch.setattr("app.jobs.manager.MasteringChain", FakeChain)
+    original_generate = SimulationAdapter.generate
+
+    async def recording_generate(self: SimulationAdapter, req: Any) -> Any:
+        calls.append("generation")
+        return await original_generate(self, req)
+
+    monkeypatch.setattr(SimulationAdapter, "generate", recording_generate)
+
+    async def scenario() -> None:
+        async with make_client(settings(tmp_path)) as (_, client):
+            job = await submit_and_wait(
+                client,
+                "/v1/generate",
+                {"prompt": "order", "duration_s": 1.0, "master": True},
+            )
+            assert job["status"] == "succeeded"
+            assert job["result"]["metadata"]["ham"]["detected_key"] == "A minor"
+            assert job["result"]["metadata"]["mastering"]["stages"] == ["eq"]
+            assert calls == ["generation", "ham", "mastering"]
+
+    run(scenario())
+
+
 def test_auto_mode_without_gpu_fails_cleanly(tmp_path: Path) -> None:
     async def scenario() -> None:
         config = settings(tmp_path, music_lab_mode="auto")
@@ -150,10 +221,23 @@ def test_unsupported_operation_fails_in_job(tmp_path: Path) -> None:
             job = await submit_and_wait(
                 client,
                 "/v1/stems",
-                {"prompt": "x", "duration_s": 0.5, "engine": "heartmula"},
+                {"prompt": "x", "duration_s": 0.5, "engine": "ace-step"},
             )
             assert job["status"] == "failed"
             assert job["error"]["code"] == "NOT_SUPPORTED"
+
+    run(scenario())
+
+
+def test_heartmula_engine_is_no_longer_accepted(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with make_client(settings(tmp_path)) as (_, client):
+            response = await client.post(
+                "/v1/generate",
+                json={"prompt": "x", "duration_s": 0.5, "engine": "heartmula"},
+            )
+            assert response.status_code == 422
+            assert response.json()["code"] == "INVALID_REQUEST"
 
     run(scenario())
 
@@ -186,5 +270,55 @@ def test_mp3_when_libsndfile_supports_it(tmp_path: Path) -> None:
             download = await client.get(f"/v1/jobs/{job['job_id']}/audio")
             assert download.status_code == 200
             assert download.headers["content-type"] == "audio/mpeg"
+
+    run(scenario())
+
+
+def test_job_ttl_cleanup_removes_job_and_audio(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        config = settings(
+            tmp_path,
+            music_lab_job_ttl_hours=0.0001,
+            music_lab_job_cleanup_interval_s=3600.0,
+        )
+        async with make_client(config) as (app, client):
+            job = await submit_and_wait(
+                client, "/v1/generate", {"prompt": "ttl", "duration_s": 0.5}
+            )
+            audio_path = Path(job["result"]["audio_path"])
+            assert audio_path.is_file()
+            await asyncio.sleep(0.5)
+
+            removed = await app.state.manager.cleanup()
+            assert removed == 1
+            assert (await client.get(f"/v1/jobs/{job['job_id']}")).status_code == 404
+            assert not audio_path.exists()
+
+    run(scenario())
+
+
+def test_job_cap_evicts_oldest_terminal_job(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        config = settings(
+            tmp_path,
+            music_lab_max_jobs=1,
+            music_lab_job_cleanup_interval_s=3600.0,
+        )
+        async with make_client(config) as (app, client):
+            first = await submit_and_wait(
+                client, "/v1/generate", {"prompt": "first", "duration_s": 0.5}
+            )
+            second = await submit_and_wait(
+                client, "/v1/generate", {"prompt": "second", "duration_s": 0.5}
+            )
+
+            removed = await app.state.manager.cleanup()
+            assert removed == 1
+            assert (
+                await client.get(f"/v1/jobs/{first['job_id']}")
+            ).status_code == 404
+            assert (
+                await client.get(f"/v1/jobs/{second['job_id']}")
+            ).status_code == 200
 
     run(scenario())

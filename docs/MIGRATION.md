@@ -182,7 +182,7 @@ Rama: `feat/music-lab`
 Fuentes de solo lectura:
 - `/home/openclaw/genome2/son1k-heart` — HAM (Harmonic Alignment Module) y `post_processing/mastering_chain.py`.
 - `/home/openclaw/genome2/son1kvers3/music-lab` — copia de referencia del pipeline musical.
-- `/home/openclaw/genome2/son1kverse-unified/apps/api/audio_engine` — implementación local de referencia para la API de HeartMuLa.
+- `/home/openclaw/genome2/son1kverse-unified/apps/api/audio_engine` — implementación local de referencia para la API de HeartMuLa (referencia histórica; retirada en §8).
 
 ### 6.1. Qué se portó
 
@@ -209,7 +209,7 @@ Fuentes de solo lectura:
   port para mantener el servicio liviano.
 - `workers/`, Celery/Redis, cache middleware, voice cloning, remix y servicios
   de análisis del repo de origen: no forman parte del alcance del Music Lab.
-- Cualquier proveedor externo de generación (incluido Suno): eliminado del
+- Cualquier proveedor externo de generación musical: eliminado del
   monorepo. El Music Lab sólo habla con adaptadores locales.
 
 ### 6.3. Decisiones conservadoras
@@ -226,8 +226,8 @@ Fuentes de solo lectura:
 - **HeartMuLa**: sólo `generate`; se confirmó el uso de
   `heartlib.HeartMuLaGenPipeline` leyendo `apps/api/audio_engine`. `repaint`,
   `cover` y `stems` responden 501. `health()` exige torch, heartlib, pesos y
-  CUDA/bitsandbytes (si el device es CUDA).
-- **Auto**: ACE-Step → HeartMuLa → error explícito. Nunca usa un proveedor
+  CUDA/bitsandbytes (si el device es CUDA). Retirado en §8 por consumo de VRAM.
+- **Auto**: ACE-Step → HeartMuLa → error explícito (desde §8 solo ACE-Step). Nunca usa un proveedor
   externo. Sólo cae a simulation con `MUSIC_LAB_ALLOW_SIM_FALLBACK=true`, y el
   resultado se marca con `mode=simulation`.
 - **Rutas de audio**: `repaint`, `cover` y `stems` sólo aceptan archivos dentro
@@ -255,7 +255,7 @@ Fuentes de solo lectura:
 
 | Destino | Tratamiento |
 |---|---|
-| `packages/shared-ui` (`@son1k/shared-ui`) | Paquete nuevo. Iconos oficiales SVG (`PlatformLogo`, `AlvaeSymbol`) y perilla literaria táctil. Sin Suno ni Supabase. |
+| `packages/shared-ui` (`@son1k/shared-ui`) | Paquete nuevo. Iconos oficiales SVG (`PlatformLogo`, `AlvaeSymbol`) y perilla literaria táctil. Sin proveedores externos ni Supabase. |
 | `apps/web` (`@son1k/web`) | App Vite + React 18 + Tailwind. Landing XentriX y consola ALVAE. |
 | `apps/web/src/context/SystemModeContext.tsx` | Estado persistente `'xentrix' \| 'alvae'`, `Ctrl+Alt+H`, pulsación 1.5s y transición 1.2s. |
 | `apps/web/src/lib/api.ts` | Cliente tipado contra `apps/api`: `POST /api/v1/music/generate` (ruta Fastify `/music/generate`), polling `queued → running → succeeded/failed`, WAV en `/api/v1/music/jobs/:id/audio`. |
@@ -269,7 +269,7 @@ Fuentes de solo lectura:
 
 ### 7.2. Qué se descartó
 
-- Cualquier cliente `suno` o `supabase`.
+- Cualquier cliente de proveedores externos o de Supabase.
 - Chatbot flotante de Pixel. Pixel queda como barra nerviosa en el borde izquierdo.
 - Copia literal de las apps Next/Vite de `son1kvers3` (dependencias rotas, emojis, 6 perillas, voice cloning). Se reimplementó el contrato de UI del lore: 4 perillas + quinto acorde.
 
@@ -280,3 +280,165 @@ Fuentes de solo lectura:
 - Ghost Studio no inventa audio: el `source_audio_path` sale de `result.audio_path` del último job `succeeded`.
 - Nova Post Pilot no llama a un CRUD inexistente: registra lanzamientos locales sobre el WAV real del job.
 - Si el usuario no tiene fila `AlvaeAccount`, la credencial lo declara (`sin credencial`) en lugar de fabricar un tier.
+
+## 8. Hardening v1 — rama `fix/hardening-v1`
+
+Esta sección cierra los pendientes de §5 y documenta el estado real de la rama.
+No reescribe el historial de §1–§7.
+
+> Nota de §5: `passwordHash`, la fuente de verdad de `stripeCustomerId` y las
+> migraciones versionadas quedaron resueltos aquí. La personalidad de Pixel de
+> §3.8 vive ahora en `packages/shared-types/src/pixel.ts`.
+
+### 8.1 Autenticación, propiedad y cuotas
+
+- JWT obligatorio en `/api/v1/*` salvo `/auth/register`, `/auth/login`,
+  `/health` y `/music/health`. `ALLOW_ANON_DEV` solo aplica en desarrollo y se
+  ignora con `NODE_ENV=production`.
+- Registro/login con rate limit de 10 peticiones por minuto.
+- Propiedad verificada en perfiles, memoria, artefactos, feedback y jobs. Un
+  job de Music Lab se resuelve contra `Generation.externalJobId`; no se acepta
+  un `jobId` ajeno aunque el cliente lo conozca.
+- Cuotas atómicas con `UPDATE ... WHERE generationsUsedThisMonth < limit` y
+  `ADMIN_UNLIMITED` configurable. La cuota se devuelve si el job falla.
+- Contraseñas scrypt con formato `salt:hash` en una única columna
+  `User.passwordHash`.
+- Los errores de validación conservan `details` y el contrato
+  `{ success: false, error: { code, message, details? } }` en todo el scope
+  raíz de Fastify.
+
+### 8.2 Arranque reproducible
+
+- Puertos únicos: API `3001`, Music Lab `8002`, Web `5173`.
+  `MUSIC_LAB_URL` apunta por defecto a `http://127.0.0.1:8002`, el proxy de
+  Vite y `colab_run.sh` usan los mismos valores.
+- `Makefile` con `setup`, `up`, `dev`, `db-migrate`, `db-status`, `db-up`,
+  `db-down`, `lab-test`, `test`, `typecheck` y `build`. `make setup` no
+  sobrescribe `apps/api/.env` y genera un `JWT_SECRET` aleatorio.
+- `pnpm typecheck` ejecuta `prisma generate` y `tsc --noEmit` en todo el
+  workspace.
+
+### 8.3 Motor único de audio
+
+- Se eliminaron `apps/api/audio_engine/`, `Dockerfile.audio-engine`,
+  `docker-compose.audio-engine.yml`, `AudioEngineClient`, los scripts de
+  despliegue GPU legacy y las variables `AUDIO_ENGINE_*` / `MUSICGEN_API_URL`.
+- `Pixel.orchestrate` y `Pixel.orchestrateCoherentSong` hablan solo con
+  `musicLabClient`. La canción coherente es single-shot: letra estructurada +
+  style tags → un job → un WAV. Se eliminó el job store en memoria y
+  `/coherent-status`.
+- ACE-Step es el único motor GPU. HeartMuLa se retiró (adapter, configuración,
+  enum de API y modo `auto`) por su consumo de VRAM; `auto` solo evalúa
+  ACE-Step. Los checkpoints fine-tuneados se montan por configuración, según
+  `services/music-lab/DEPLOY_GPU_GUIDE.md`.
+- Se eliminaron las rutas `/audio/*`. La descarga de audio de Pixel usa
+  `GET /api/v1/artifacts/:artifactId/audio`, con verificación de dueño y ruta
+  confinada a `output/tracks/`.
+- `POST /api/v1/sessions`, `GET /api/v1/sessions/:id` y
+  `POST /api/v1/sessions/:id/close` crean, consultan y cierran sesiones con el
+  `userId` del JWT y ownership del perfil. `/orchestrate*` exige que la sesión
+  exista, pertenezca al usuario y al perfil, y esté activa.
+- La personalidad de Pixel vive en `packages/shared-types/src/pixel.ts` y la
+  consumen API y Web; se borraron las copias duplicadas.
+- La simulación CPU de Music Lab ejecuta síntesis y escritura en
+  `asyncio.to_thread`, para no bloquear el event loop mientras atiende el
+  polling de jobs largos. El cliente de la API usa un timeout de polling de al
+  menos 60 s por petición, independiente del timeout de espera total.
+- `JobManager` de Music Lab aplica TTL configurable (24 h por defecto), tope de
+  jobs y limpieza periódica. Al expirar, borra el audio solo si está dentro de
+  `MUSIC_LAB_OUTPUT_DIR`.
+- La API usa `pino` en lugar de `console.*` (el único `console.error` restante
+  es el fallo de configuración previo al logger).
+- El despliegue GPU está documentado en
+  `services/music-lab/DEPLOY_GPU_GUIDE.md`.
+
+### 8.4 Datos y migraciones
+
+- Migraciones versionadas: `20261117000000_init` y
+  `20261118000000_user_password_hash`.
+- `User.password` se renombró a `passwordHash`; el duplicado nullable de
+  SSV-BETA nunca se escribió y se eliminó.
+- `stripeCustomerId` queda solo en `User`; se eliminó de `AlvaeAccount`.
+- `AlvaeAccount`, `AlvaeRole` y `AlvaeTier` quedan marcados como LEGACY: se
+  conservan por compatibilidad, pero no gobiernan autorización ni facturación.
+- Los campos JSON siguen como `String` (decisión de §3.5; no se tocó en esta
+  rama).
+- El reset local sobre PostgreSQL 16 aplicó ambas migraciones; `migrate status`
+  quedó limpio y `migrate diff --from-migrations` devolvió
+  “No difference detected”. El esquema resultante tiene `passwordHash` como
+  única credencial y `generationsLimit` con default 3.
+- `--shadow-database-url` debe apuntar a una base desechable, nunca a la base
+  principal: Prisma la reinicia durante el diff y puede borrar
+  `_prisma_migrations`. Si eso ocurre, se recupera el historial con
+  `prisma migrate resolve --applied <migración>` sin tocar los datos.
+
+### 8.5 CI e infraestructura local
+
+- `.github/workflows/ci.yml` define dos jobs:
+  - TypeScript: PostgreSQL 16, `prisma migrate deploy`, `typecheck`, `lint`,
+    tests de API y build de Web.
+  - Music Lab: Python 3.11 con `requirements.txt` y `pytest`.
+- `docker-compose.yml` levanta PostgreSQL 16 para desarrollo con volumen y
+  healthcheck. Las credenciales coinciden con `.env.example` y no son de
+  producción.
+- `apps/api/scripts/e2e-audio.mjs` prueba el flujo real en simulación:
+  registro → login → `/music/generate` → polling → descarga del WAV.
+- `apps/api/scripts/create-admin.ts` crea o promueve un ADMIN idempotente por
+  email, con `role=ADMIN`, tier `ENTERPRISE`, generaciones ilimitadas y
+  `storageLimit` máximo. Se ejecuta con `make admin-create`.
+
+### 8.6 Bootstrap de ADMIN
+
+- `make admin-create` lee `ADMIN_EMAIL`, `ADMIN_ALIAS` y `ADMIN_PASSWORD`
+  (mínimo 12 caracteres), carga `apps/api/.env`, hashea con scrypt y hace
+  `upsert` por email.
+- La cuenta resultante tiene `role=ADMIN`, `subscriptionTier=ENTERPRISE`,
+  `generationsLimit=UNLIMITED_GENERATIONS`, `storageLimit` máximo de
+  ENTERPRISE, email verificado y cuenta activa.
+- `QuotaService` omite el bloqueo de cuota para ADMIN cuando
+  `ADMIN_UNLIMITED=true`; el uso mensual se sigue incrementando.
+- Verificado en local: login correcto, `/auth/me` con límite 2147483647 y 4
+  generaciones consecutivas en `simulation` sin bloqueo. La cuenta de prueba se
+  dejó limpia (sin perfil ni generaciones) y con el contador en 0.
+
+### 8.7 Verificación real
+
+Ejecutado en el host de la rama:
+
+- `pnpm typecheck`: OK.
+- `pnpm --filter @son1k/api lint`: OK, sin errores ni warnings.
+- `pnpm --filter @son1k/api test`: 6 archivos, 31 tests aprobados.
+- `services/music-lab`: `pytest -q`, 21 tests aprobados.
+- `prisma migrate deploy` sobre PostgreSQL 16 temporal: ambas migraciones
+  aplicadas.
+- `e2e-audio.mjs` contra API + Music Lab en `simulation`: job `succeeded`,
+  WAV de ~2.0 MB y masterización a −14.02 LUFS.
+- `POST /orchestrate-coherent` con proveedor LLM local simulado + Music Lab en
+  `simulation`: artefacto `audio_url`, descarga autenticada 200 y 401 sin
+  token.
+- Flujo de sesiones contra PostgreSQL real: `POST /sessions`, luego
+  `POST /orchestrate-coherent` con esa sesión, descarga 200 (WAV PCM 44.1 kHz),
+  `close` y `status=completed`; orquestar después devuelve 409
+  `SESSION_NOT_ACTIVE` y un usuario ajeno recibe 403 al crear o consultar la
+  sesión.
+- `POST /orchestrate-coherent` sin letra responde 400 `VALIDATION_ERROR`
+  (antes era un 500 genérico).
+- Smoke test de ADMIN `Nov4-ix`: login, `/auth/me`, perfil, 4 generaciones
+  `simulation` (WAV PCM 16 bit 44.1 kHz), sesión, `orchestrate-coherent`
+  (artefacto `audio_url`, WAV de 31.7 MB), cierre de sesión y 409
+  `SESSION_NOT_ACTIVE` al reutilizarla.
+- Se corrigió el bloqueo del event loop de `simulation` con
+  `asyncio.to_thread`; el job coherente de 180 s terminó en ~10 s y el polling
+  dejó de agotar el timeout de 15 s.
+- `/v1/capabilities` expone solo `simulation` y `ace-step`; `engine=heartmula`
+  se rechaza con 400 en la API y 422 en Music Lab.
+- `make -n` de todos los targets validado con una copia local de GNU Make
+  (`make` no estaba instalado en el host).
+
+No ejecutado:
+
+- `docker compose up` y `docker build`: Docker no está instalado en el host de
+  verificación.
+- Motor ACE-Step real: requiere GPU y pesos; solo se verificó `simulation`.
+- GitHub Actions: el YAML no se ejecutó desde este entorno; queda para el
+  primer push a GitHub.

@@ -14,7 +14,7 @@ export class MusicAgent extends BaseAgent {
 
   buildSystemPrompt(profile: ArtistProfile): string {
     return `Eres un ingeniero de prompts especializado en generación musical.
-Tu trabajo es construir prompts técnicamente precisos para motores de audio (MusicGen, ACE-Step, HeartMuLa).
+Tu trabajo es construir prompts técnicamente precisos para ACE-Step 1.5.
 
 Artista: ${profile.alias}
 Géneros base: ${profile.genres.join(', ')}

@@ -8,12 +8,24 @@ try {
   const loadEnvFile = (process as typeof process & { loadEnvFile?: () => void }).loadEnvFile
   loadEnvFile?.()
 } catch {
+  // .env es opcional: en producción las variables vienen del entorno.
 }
+
+const BooleanFromString = z
+  .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
+  .transform((value) => value === true || value === 'true' || value === '1')
 
 const ConfigSchema = z.object({
   NODE_ENV:    z.enum(['development', 'production', 'test']).default('development'),
-  PORT:        z.coerce.number().default(3000),
+  PORT:        z.coerce.number().default(3001),
   HOST:        z.string().default('0.0.0.0'),
+
+  // Lista separada por comas. Nunca se hardcodean orígenes en el servidor.
+  CORS_ORIGINS: z.string().default('http://localhost:5173'),
+  // Bypass explícito y solo para desarrollo local. Se ignora en production.
+  ALLOW_ANON_DEV: BooleanFromString.default(false),
+  // Los ADMIN no consumen cuota cuando esto es true.
+  ADMIN_UNLIMITED: BooleanFromString.default(true),
 
   DATABASE_URL: z.string().default('postgresql://son1kverse:son1kverse@localhost:5432/son1kverse?schema=public'),
 
@@ -27,11 +39,11 @@ const ConfigSchema = z.object({
   OPENAI_API_KEY:      z.string().optional(),
   OPENROUTER_API_KEY:  z.string().optional(),
   OLLAMA_BASE_URL:     z.string().url().default('http://localhost:11434'),
-  MUSICGEN_API_URL:    z.string().url().optional().or(z.literal('')),
-  AUDIO_ENGINE_API_URL: z.string().url().default('http://127.0.0.1:8001'),
-
   MUSIC_LAB_URL:     z.string().url().default('http://127.0.0.1:8002'),
   MUSIC_LAB_API_KEY: z.string().default(''),
+  MUSIC_LAB_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(15_000),
+  MUSIC_LAB_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+  MUSIC_LAB_RETRY_BACKOFF_MS: z.coerce.number().int().min(100).max(10_000).default(500),
 
   PIXEL_DEFAULT_MODEL:  z.string().default('anthropic/claude-3-haiku'),
   PIXEL_ANALYSIS_MODEL: z.string().default('anthropic/claude-3-haiku'),

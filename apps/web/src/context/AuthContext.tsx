@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { DEFAULT_SUBSCRIPTION_TIER, generationLimitForTier, storageLimitForTier } from '@son1k/shared-types'
 import { api, ApiError, type AuthProfile, type AuthUser } from '../lib/api'
 
 const TOKEN_KEY = 'son1k.authToken'
@@ -47,10 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: {
           ...nextUser,
           generationsUsedThisMonth: 0,
-          generationsLimit: 10,
+          generationsLimit: generationLimitForTier(DEFAULT_SUBSCRIPTION_TIER),
           storageUsedBytes: 0,
-          storageLimit: 1073741824,
-          subscriptionTier: 'FREE',
+          storageLimit: storageLimitForTier(DEFAULT_SUBSCRIPTION_TIER),
+          subscriptionTier: DEFAULT_SUBSCRIPTION_TIER,
         },
         alvaeAccount: null,
       })

@@ -6,10 +6,11 @@ import asyncio
 import logging
 import uuid
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.adapters.registry import AdapterRegistry, Selection
+from app.audio import read_audio, resample_if_needed
 from app.config import Settings
 from app.errors import (
     AudioNotReadyError,
@@ -17,6 +18,7 @@ from app.errors import (
     MusicLabError,
     NotSupportedError,
 )
+from app.ham import HarmonicAligner
 from app.mastering.chain import MasteringChain
 from app.schemas import (
     CoverRequest,
@@ -38,6 +40,9 @@ logger = logging.getLogger(__name__)
 
 JobRequest = GenerateRequest | RepaintRequest | CoverRequest | StemsRequest
 
+# HAM analyzes a bounded window so long tracks do not blow up the FFT memory.
+_HAM_MAX_ANALYSIS_S = 60.0
+
 
 class JobManager:
     def __init__(self, settings: Settings, registry: AdapterRegistry) -> None:
@@ -48,6 +53,7 @@ class JobManager:
         self._queue: asyncio.Queue[str | None] = asyncio.Queue()
         self._semaphore = asyncio.Semaphore(settings.music_lab_max_concurrency)
         self._workers: list[asyncio.Task[None]] = []
+        self._cleanup_task: asyncio.Task[None] | None = None
         self._started = False
         self._lock = asyncio.Lock()
 
@@ -57,15 +63,93 @@ class JobManager:
         self._started = True
         for index in range(self._settings.music_lab_max_concurrency):
             self._workers.append(asyncio.create_task(self._worker(index)))
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
     async def stop(self) -> None:
         self._started = False
+        if self._cleanup_task is not None:
+            self._cleanup_task.cancel()
+            await asyncio.gather(self._cleanup_task, return_exceptions=True)
+            self._cleanup_task = None
         for _ in self._workers:
             await self._queue.put(None)
         for worker in self._workers:
             worker.cancel()
         await asyncio.gather(*self._workers, return_exceptions=True)
         self._workers.clear()
+
+    async def _cleanup_loop(self) -> None:
+        interval = self._settings.music_lab_job_cleanup_interval_s
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await self.cleanup()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Job cleanup failed")
+
+    async def cleanup(self) -> int:
+        """Expira jobs por TTL y aplica el tope máximo.
+
+        Devuelve cuántos jobs se eliminaron. Los audios asociados se borran
+        best-effort solo si viven dentro de ``music_lab_output_dir``.
+        """
+        removed: list[Job] = []
+        ttl = timedelta(hours=self._settings.music_lab_job_ttl_hours)
+        now = datetime.now(UTC)
+        async with self._lock:
+            if ttl > timedelta(0):
+                for job_id, job in list(self._jobs.items()):
+                    if now - job.updated_at >= ttl:
+                        removed.append(self._jobs.pop(job_id))
+                        self._requests.pop(job_id, None)
+            overflow = len(self._jobs) - self._settings.music_lab_max_jobs
+            if overflow > 0:
+                by_age = sorted(
+                    (
+                        (job.created_at, job_id, job)
+                        for job_id, job in self._jobs.items()
+                    ),
+                    key=lambda item: item[0],
+                )
+                terminal = [
+                    item for item in by_age
+                    if item[2].status in (JobStatus.SUCCEEDED, JobStatus.FAILED)
+                ]
+                active = [item for item in by_age if item not in terminal]
+                candidates = terminal + active
+                for _, job_id, _job in candidates[:overflow]:
+                    if job_id in self._jobs:
+                        removed.append(self._jobs.pop(job_id))
+                        self._requests.pop(job_id, None)
+
+        for job in removed:
+            self._delete_job_files(job)
+        if removed:
+            logger.info(
+                "Cleaned %s Music Lab job(s); %s remain",
+                len(removed),
+                len(self._jobs),
+            )
+        return len(removed)
+
+    def _delete_job_files(self, job: Job) -> None:
+        result = job.result
+        if result is None:
+            return
+        if isinstance(result, StemsResult):
+            raw_paths = list(result.stems.values())
+        else:
+            raw_paths = [result.audio_path]
+        root = self._settings.music_lab_output_dir.resolve()
+        for raw_path in raw_paths:
+            try:
+                path = Path(raw_path).resolve()
+                if path.is_relative_to(root) and path.is_file():
+                    path.unlink()
+            except OSError:
+                logger.warning("Could not delete audio file %s", raw_path, exc_info=True)
 
     async def submit(
         self, operation: OperationName, request: JobRequest
@@ -161,8 +245,9 @@ class JobManager:
             if selection.fallback_reason:
                 result.metadata["fallback_reason"] = selection.fallback_reason
                 result.metadata["requested_mode"] = self._settings.music_lab_mode
+            result = await self._apply_ham(result)
             if request.master:
-                result = self._apply_mastering(result)
+                result = await asyncio.to_thread(self._apply_mastering, result)
 
             await self._update(
                 job_id,
@@ -207,6 +292,44 @@ class JobManager:
         assert isinstance(request, StemsRequest)
         return await adapter.stems(request)
 
+    async def _apply_ham(
+        self, result: GenerationResult | StemsResult
+    ) -> GenerationResult | StemsResult:
+        if not isinstance(result, GenerationResult):
+            return result
+        analysis = await asyncio.to_thread(
+            self._run_ham, Path(result.audio_path), result.sample_rate
+        )
+        result.metadata["ham"] = analysis
+        return result
+
+    def _run_ham(self, path: Path, sample_rate: int) -> dict[str, object]:
+        audio, actual_sample_rate = read_audio(path)
+        if actual_sample_rate != sample_rate:
+            audio = resample_if_needed(audio, actual_sample_rate, sample_rate)
+        max_samples = int(_HAM_MAX_ANALYSIS_S * sample_rate)
+        analyzed_s = audio.shape[1] / sample_rate
+        if audio.shape[1] > max_samples:
+            start = (audio.shape[1] - max_samples) // 2
+            audio = audio[:, start : start + max_samples]
+            analyzed_s = max_samples / sample_rate
+        analysis = HarmonicAligner(sample_rate).analyze(audio)
+        return {
+            "analyzed_s": round(analyzed_s, 6),
+            "detected_key": f"{analysis.key.key_name} {analysis.key.mode}",
+            "detected_key_index": analysis.key.key_index,
+            "key_confidence": round(analysis.key.confidence, 6),
+            "detected_bpm": round(analysis.bpm, 2),
+            "bpm_confidence": round(analysis.bpm_confidence, 6),
+            "rms": round(analysis.rms, 6),
+            "spectral": {
+                "centroid_hz": round(analysis.spectral.centroid_hz, 2),
+                "bandwidth_hz": round(analysis.spectral.bandwidth_hz, 2),
+                "rolloff_hz": round(analysis.spectral.rolloff_hz, 2),
+                "flatness": round(analysis.spectral.flatness, 6),
+            },
+        }
+
     def _apply_mastering(
         self, result: GenerationResult | StemsResult
     ) -> GenerationResult | StemsResult:
@@ -245,7 +368,9 @@ class JobManager:
         mode: EngineName | None = None,
     ) -> None:
         async with self._lock:
-            job = self._jobs[job_id]
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
             updates: dict[str, object] = {"updated_at": datetime.now(UTC)}
             if status is not None:
                 updates["status"] = status

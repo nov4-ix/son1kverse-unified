@@ -4,8 +4,8 @@ import type { IIdentityService } from '../core/interfaces.js'
 import type { ArtistProfile, Feedback } from '../core/types.js'
 import type { CreateProfileDTO, UpdateProfileDTO } from '../core/contracts.js'
 import { ProfileRepository } from '../storage/repositories/ProfileRepository.js'
-import { prisma } from '../storage/client.js'
 import { eventBus, SystemEvent } from '../core/events.js'
+import { logger } from '../lib/logger.js'
 
 export class IdentityService implements IIdentityService {
   private readonly repo: ProfileRepository
@@ -14,31 +14,12 @@ export class IdentityService implements IIdentityService {
     this.repo = new ProfileRepository()
   }
 
-  /**
-   * Si el userId no existe en User, crea un User mínimo para satisfacer la FK
-   * de ArtistProfile.userId (SQLite/Prisma).
-   */
-  private async ensureUserExists(userId: string, aliasHint: string): Promise<void> {
-    const existing = await prisma.user.findUnique({ where: { id: userId } })
-    if (existing) return
-
-    const safeAlias = `u_${userId.slice(0, 12)}`
-    await prisma.user.create({
-      data: {
-        id:       userId,
-        email:    `${userId}@placeholder.son1kverse.local`,
-        alias:    safeAlias,
-        password: 'uninitialized',
-      },
-    })
-    console.log(`[IdentityService] User auto-creado para FK: ${userId} (hint: ${aliasHint})`)
-  }
-
   async createProfile(data: CreateProfileDTO): Promise<ArtistProfile> {
-    await this.ensureUserExists(data.userId, data.alias)
+    // El usuario debe existir: lo garantiza el JWT (sub) y la FK de ArtistProfile.
+    // No se crean usuarios fantasma ni contraseñas placeholder.
     const profile = await this.repo.create(data)
     eventBus.emit(SystemEvent.PROFILE_CREATED, { profileId: profile.id, alias: profile.alias })
-    console.log(`[IdentityService] Perfil creado: ${profile.alias} (${profile.id})`)
+    logger.info({ profileId: profile.id, alias: profile.alias }, 'Perfil creado')
     return profile
   }
 

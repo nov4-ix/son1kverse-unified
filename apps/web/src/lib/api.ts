@@ -1,6 +1,8 @@
+import { FREE_GENERATIONS_PER_MONTH } from '@son1k/shared-types'
+
 const API_PREFIX = '/api/v1'
 
-export type EngineName = 'simulation' | 'ace-step' | 'heartmula'
+export type EngineName = 'simulation' | 'ace-step'
 export type OutputFormat = 'wav' | 'mp3'
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed'
 export type MusicOperation = 'generate' | 'repaint' | 'cover' | 'stems'
@@ -306,7 +308,7 @@ function parseAuthProfile(value: unknown): AuthProfile {
       email: asString(user['email']),
       alias: asString(user['alias']),
       generationsUsedThisMonth: asNumber(user['generationsUsedThisMonth']),
-      generationsLimit: asNumber(user['generationsLimit'], 10),
+      generationsLimit: asNumber(user['generationsLimit'], FREE_GENERATIONS_PER_MONTH),
       storageUsedBytes: asNumber(user['storageUsedBytes']),
       storageLimit: asNumber(user['storageLimit'], 1073741824),
       subscriptionTier: asString(user['subscriptionTier'], 'FREE'),
@@ -343,12 +345,28 @@ export function isStemsResult(
   return result !== null && 'stems' in result
 }
 
-async function postMusicJob(path: string, body: unknown): Promise<JobAccepted> {
+async function postMusicJob(path: string, body: unknown, token: string | null): Promise<JobAccepted> {
   const payload = await requestJson(`${API_PREFIX}${path}`, {
     method: 'POST',
     body: JSON.stringify(body),
-  })
+  }, token)
   return parseJobAccepted(payload)
+}
+
+export async function fetchAuthorizedBlob(
+  path: string,
+  token: string | null,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(path, {
+    headers: authHeader(token),
+    ...(signal !== undefined ? { signal } : {}),
+  })
+  if (!response.ok) {
+    const payload = await parseJson(response)
+    throw readError(payload, response.status)
+  }
+  return response.blob()
 }
 
 export const api = {
@@ -385,36 +403,41 @@ export const api = {
     return parseAuthProfile(payload)
   },
 
-  generate: (body: GenerateRequest): Promise<JobAccepted> => {
-    return postMusicJob('/music/generate', body)
+  generate: (body: GenerateRequest, token: string | null): Promise<JobAccepted> => {
+    return postMusicJob('/music/generate', body, token)
   },
 
-  repaint: (body: RepaintRequest): Promise<JobAccepted> => {
-    return postMusicJob('/music/repaint', body)
+  repaint: (body: RepaintRequest, token: string | null): Promise<JobAccepted> => {
+    return postMusicJob('/music/repaint', body, token)
   },
 
-  cover: (body: CoverRequest): Promise<JobAccepted> => {
-    return postMusicJob('/music/cover', body)
+  cover: (body: CoverRequest, token: string | null): Promise<JobAccepted> => {
+    return postMusicJob('/music/cover', body, token)
   },
 
-  stems: (body: StemsRequest): Promise<JobAccepted> => {
-    return postMusicJob('/music/stems', body)
+  stems: (body: StemsRequest, token: string | null): Promise<JobAccepted> => {
+    return postMusicJob('/music/stems', body, token)
   },
 
-  getJob: async (jobId: string): Promise<MusicJob> => {
-    const payload = await requestJson(`${API_PREFIX}/music/jobs/${encodeURIComponent(jobId)}`)
+  getJob: async (jobId: string, token: string | null): Promise<MusicJob> => {
+    const payload = await requestJson(
+      `${API_PREFIX}/music/jobs/${encodeURIComponent(jobId)}`,
+      { method: 'GET' },
+      token,
+    )
     return parseJob(payload)
   },
 
   pollJob: async (
     jobId: string,
+    token: string | null,
     onTick?: (job: MusicJob) => void,
     intervalMs = 800,
     timeoutMs = 10 * 60_000,
   ): Promise<MusicJob> => {
     const started = Date.now()
     while (Date.now() - started < timeoutMs) {
-      const job = await api.getJob(jobId)
+      const job = await api.getJob(jobId, token)
       onTick?.(job)
       if (job.status === 'succeeded' || job.status === 'failed') return job
       await new Promise((resolve) => window.setTimeout(resolve, intervalMs))

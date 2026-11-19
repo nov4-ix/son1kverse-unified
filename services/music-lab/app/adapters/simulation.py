@@ -292,8 +292,9 @@ class SimulationAdapter(AudioGeneratorInterface):
     async def generate(self, req: GenerateRequest) -> GenerationResult:
         await self._simulate_latency()
         job_id = uuid.uuid4().hex
-        rendered = render_simulation(req, self._sample_rate)
-        path = write_audio(
+        rendered = await asyncio.to_thread(render_simulation, req, self._sample_rate)
+        path = await asyncio.to_thread(
+            write_audio,
             self._path_for(job_id, "generate", req.output_format),
             rendered.mix,
             rendered.sample_rate,
@@ -338,7 +339,7 @@ class SimulationAdapter(AudioGeneratorInterface):
                 "master": False,
             }
         )
-        rendered = render_simulation(replacement_req, self._sample_rate)
+        rendered = await asyncio.to_thread(render_simulation, replacement_req, self._sample_rate)
         replacement = rendered.mix[:, : end_sample - start_sample]
         if replacement.shape[1] < end_sample - start_sample:
             replacement = np.pad(
@@ -353,7 +354,8 @@ class SimulationAdapter(AudioGeneratorInterface):
 
         output = audio.copy()
         output[:, start_sample:end_sample] = replacement
-        path = write_audio(
+        path = await asyncio.to_thread(
+            write_audio,
             self._path_for(job_id, "repaint", req.output_format),
             output,
             self._sample_rate,
@@ -387,8 +389,9 @@ class SimulationAdapter(AudioGeneratorInterface):
         audio = resample_if_needed(audio, source_sr, self._sample_rate)
         source_duration = audio.shape[1] / self._sample_rate
         cover_req = req.model_copy(update={"duration_s": source_duration, "master": False})
-        rendered = render_simulation(cover_req, self._sample_rate)
-        path = write_audio(
+        rendered = await asyncio.to_thread(render_simulation, cover_req, self._sample_rate)
+        path = await asyncio.to_thread(
+            write_audio,
             self._path_for(job_id, "cover", req.output_format),
             rendered.mix,
             rendered.sample_rate,
@@ -416,10 +419,10 @@ class SimulationAdapter(AudioGeneratorInterface):
             audio, source_sr = read_audio(source)
             audio = resample_if_needed(audio, source_sr, self._sample_rate)
             duration = audio.shape[1] / self._sample_rate
-            drums, bass, other = _split_bands(audio, self._sample_rate)
+            drums, bass, other = await asyncio.to_thread(_split_bands, audio, self._sample_rate)
             source_metadata: dict[str, object] = {"source_audio_path": str(source)}
         else:
-            rendered = render_simulation(req, self._sample_rate)
+            rendered = await asyncio.to_thread(render_simulation, req, self._sample_rate)
             drums, bass, other = rendered.drums, rendered.bass, rendered.other
             duration = rendered.duration_s
             source_metadata = {"source_audio_path": None}

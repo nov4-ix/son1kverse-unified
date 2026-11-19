@@ -4,13 +4,29 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import fjwt from '@fastify/jwt'
+import rateLimit from '@fastify/rate-limit'
 import { config } from '../config/index.js'
+import { errorResponse } from '../core/contracts.js'
 import { errorHandlerPlugin } from './plugins/error-handler.js'
 import { authRoutes } from './routes/auth.js'
 import { orchestrateRoutes } from './routes/orchestrate.js'
 import { profileRoutes } from './routes/profile.js'
 import { memoryRoutes } from './routes/memory.js'
 import { musicRoutes } from './routes/music.js'
+import { sessionRoutes } from './routes/sessions.js'
+
+const PUBLIC_API_PATHS = new Set([
+  '/api/v1/auth/register',
+  '/api/v1/auth/login',
+  '/api/v1/music/health',
+])
+
+function corsOrigins(): string[] {
+  return config.CORS_ORIGINS
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
+}
 
 export async function buildServer() {
   const app = Fastify({
@@ -23,39 +39,55 @@ export async function buildServer() {
   })
 
   // ─── Plugins ────────────────────────────────────────────────────────────────
-  await app.register(cors, {
-    origin: config.NODE_ENV === 'development' ? true : ['https://son1kverse.com'],
-  })
+  await app.register(cors, { origin: corsOrigins() })
   await app.register(helmet)
   await app.register(fjwt, {
     secret: config.JWT_SECRET,
   })
-  await app.register(errorHandlerPlugin)
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: '1 minute',
+    errorResponseBuilder: (request, context) => {
+      request.log.warn({ path: request.url }, '[rate-limit] solicitud limitada')
+      return errorResponse(
+        'RATE_LIMITED',
+        `Demasiadas solicitudes. Reintenta en ${context.after}.`,
+        { max: context.max, after: context.after },
+      )
+    },
+  })
+  // No usar app.register: setErrorHandler debe aplicar al scope raíz.
+  await errorHandlerPlugin(app)
 
-  // Auth: JWT obligatorio en /api/v1/audio/* (generate, status, download).
-  // - /audio/health es siempre público (monitorización / probes).
-  // - En desarrollo se permite acceder SIN token para no frenar el loop local
-  //   (e2e-audio.mjs). Si se envía token, se valida igualmente.
-  // - En producción NO hay bypass: todo /api/v1/audio/* exige Bearer válido.
-  const isDev = config.NODE_ENV === 'development'
+  // ─── Auth global ────────────────────────────────────────────────────────────
+  // Todo /api/v1/* exige JWT salvo register, login y el health del motor.
+  // /health (sin prefijo) queda público. ALLOW_ANON_DEV es un bypass explícito,
+  // solo local y nunca efectivo con NODE_ENV=production.
   app.addHook('preHandler', async (request, reply) => {
     const path = request.url.split('?')[0] ?? ''
-    if (!path.startsWith('/api/v1/audio')) return
-    if (path === '/api/v1/audio/health') return
+    if (!path.startsWith('/api/v1/')) return
+    if (PUBLIC_API_PATHS.has(path)) return
 
-    if (isDev && request.headers.authorization === undefined) {
-      request.log.warn({ path }, '[auth] Modo desarrollo: /api/v1/audio/* sin JWT')
+    const anonymousDev =
+      config.ALLOW_ANON_DEV &&
+      config.NODE_ENV !== 'production' &&
+      request.headers.authorization === undefined
+
+    if (anonymousDev) {
+      request.log.warn({ path }, '[auth] ALLOW_ANON_DEV activo: request sin JWT')
       return
     }
 
     try {
       await request.jwtVerify()
     } catch {
-      return reply.status(401).send({
-        success: false,
-        error:   'Unauthorized',
-        message: 'Bearer JWT requerido para /api/v1/audio/* (POST /api/v1/auth/login)',
-      })
+      return reply.status(401).send(
+        errorResponse(
+          'UNAUTHORIZED',
+          'Bearer JWT requerido. Inicia sesión en POST /api/v1/auth/login.',
+        ),
+      )
     }
   })
 
@@ -73,6 +105,7 @@ export async function buildServer() {
   await app.register(profileRoutes,     { prefix: '/api/v1' })
   await app.register(memoryRoutes,      { prefix: '/api/v1' })
   await app.register(musicRoutes,       { prefix: '/api/v1' })
+  await app.register(sessionRoutes,     { prefix: '/api/v1' })
 
   return app
 }
