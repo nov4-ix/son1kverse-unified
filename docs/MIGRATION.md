@@ -209,7 +209,7 @@ Fuentes de solo lectura:
   port para mantener el servicio liviano.
 - `workers/`, Celery/Redis, cache middleware, voice cloning, remix y servicios
   de análisis del repo de origen: no forman parte del alcance del Music Lab.
-- Cualquier proveedor externo de generación (incluido Suno): eliminado del
+- Cualquier proveedor externo de generación musical: eliminado del
   monorepo. El Music Lab sólo habla con adaptadores locales.
 
 ### 6.3. Decisiones conservadoras
@@ -255,7 +255,7 @@ Fuentes de solo lectura:
 
 | Destino | Tratamiento |
 |---|---|
-| `packages/shared-ui` (`@son1k/shared-ui`) | Paquete nuevo. Iconos oficiales SVG (`PlatformLogo`, `AlvaeSymbol`) y perilla literaria táctil. Sin Suno ni Supabase. |
+| `packages/shared-ui` (`@son1k/shared-ui`) | Paquete nuevo. Iconos oficiales SVG (`PlatformLogo`, `AlvaeSymbol`) y perilla literaria táctil. Sin proveedores externos ni Supabase. |
 | `apps/web` (`@son1k/web`) | App Vite + React 18 + Tailwind. Landing XentriX y consola ALVAE. |
 | `apps/web/src/context/SystemModeContext.tsx` | Estado persistente `'xentrix' \| 'alvae'`, `Ctrl+Alt+H`, pulsación 1.5s y transición 1.2s. |
 | `apps/web/src/lib/api.ts` | Cliente tipado contra `apps/api`: `POST /api/v1/music/generate` (ruta Fastify `/music/generate`), polling `queued → running → succeeded/failed`, WAV en `/api/v1/music/jobs/:id/audio`. |
@@ -269,7 +269,7 @@ Fuentes de solo lectura:
 
 ### 7.2. Qué se descartó
 
-- Cualquier cliente `suno` o `supabase`.
+- Cualquier cliente de proveedores externos o de Supabase.
 - Chatbot flotante de Pixel. Pixel queda como barra nerviosa en el borde izquierdo.
 - Copia literal de las apps Next/Vite de `son1kvers3` (dependencias rotas, emojis, 6 perillas, voice cloning). Se reimplementó el contrato de UI del lore: 4 perillas + quinto acorde.
 

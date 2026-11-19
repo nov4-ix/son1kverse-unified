@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.adapters.registry import AdapterRegistry, Selection
+from app.audio import read_audio, resample_if_needed
 from app.config import Settings
 from app.errors import (
     AudioNotReadyError,
@@ -17,6 +18,7 @@ from app.errors import (
     MusicLabError,
     NotSupportedError,
 )
+from app.ham import HarmonicAligner
 from app.mastering.chain import MasteringChain
 from app.schemas import (
     CoverRequest,
@@ -37,6 +39,9 @@ from app.schemas import (
 logger = logging.getLogger(__name__)
 
 JobRequest = GenerateRequest | RepaintRequest | CoverRequest | StemsRequest
+
+# HAM analyzes a bounded window so long tracks do not blow up the FFT memory.
+_HAM_MAX_ANALYSIS_S = 60.0
 
 
 class JobManager:
@@ -114,7 +119,7 @@ class JobManager:
                 ]
                 active = [item for item in by_age if item not in terminal]
                 candidates = terminal + active
-                for _, job_id, job in candidates[:overflow]:
+                for _, job_id, _job in candidates[:overflow]:
                     if job_id in self._jobs:
                         removed.append(self._jobs.pop(job_id))
                         self._requests.pop(job_id, None)
@@ -240,8 +245,9 @@ class JobManager:
             if selection.fallback_reason:
                 result.metadata["fallback_reason"] = selection.fallback_reason
                 result.metadata["requested_mode"] = self._settings.music_lab_mode
+            result = await self._apply_ham(result)
             if request.master:
-                result = self._apply_mastering(result)
+                result = await asyncio.to_thread(self._apply_mastering, result)
 
             await self._update(
                 job_id,
@@ -285,6 +291,44 @@ class JobManager:
             return await adapter.cover(request)
         assert isinstance(request, StemsRequest)
         return await adapter.stems(request)
+
+    async def _apply_ham(
+        self, result: GenerationResult | StemsResult
+    ) -> GenerationResult | StemsResult:
+        if not isinstance(result, GenerationResult):
+            return result
+        analysis = await asyncio.to_thread(
+            self._run_ham, Path(result.audio_path), result.sample_rate
+        )
+        result.metadata["ham"] = analysis
+        return result
+
+    def _run_ham(self, path: Path, sample_rate: int) -> dict[str, object]:
+        audio, actual_sample_rate = read_audio(path)
+        if actual_sample_rate != sample_rate:
+            audio = resample_if_needed(audio, actual_sample_rate, sample_rate)
+        max_samples = int(_HAM_MAX_ANALYSIS_S * sample_rate)
+        analyzed_s = audio.shape[1] / sample_rate
+        if audio.shape[1] > max_samples:
+            start = (audio.shape[1] - max_samples) // 2
+            audio = audio[:, start : start + max_samples]
+            analyzed_s = max_samples / sample_rate
+        analysis = HarmonicAligner(sample_rate).analyze(audio)
+        return {
+            "analyzed_s": round(analyzed_s, 6),
+            "detected_key": f"{analysis.key.key_name} {analysis.key.mode}",
+            "detected_key_index": analysis.key.key_index,
+            "key_confidence": round(analysis.key.confidence, 6),
+            "detected_bpm": round(analysis.bpm, 2),
+            "bpm_confidence": round(analysis.bpm_confidence, 6),
+            "rms": round(analysis.rms, 6),
+            "spectral": {
+                "centroid_hz": round(analysis.spectral.centroid_hz, 2),
+                "bandwidth_hz": round(analysis.spectral.bandwidth_hz, 2),
+                "rolloff_hz": round(analysis.spectral.rolloff_hz, 2),
+                "flatness": round(analysis.spectral.flatness, 6),
+            },
+        }
 
     def _apply_mastering(
         self, result: GenerationResult | StemsResult

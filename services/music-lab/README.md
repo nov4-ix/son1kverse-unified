@@ -26,6 +26,20 @@ Copia `.env.example` a `.env` si necesitas cambiar valores. En `simulation`
 no hace falta API key; si defines `MUSIC_LAB_API_KEY`, todas las rutas `/v1/*`
 exigen el header `x-api-key`.
 
+## Pipeline de audio
+
+Cada job de generación ejecuta, en este orden:
+
+1. Adaptador activo (`simulation` o ACE-Step 1.5).
+2. **HAM** (`app/ham`): analiza key, BPM, RMS y perfil espectral del audio
+   generado y los expone en `result.metadata.ham`.
+3. **MasteringChain** (`app/mastering`) solo si `master=true`: normaliza a
+   −14 LUFS, aplica EQ/limiter/fades y expone `result.metadata.mastering`.
+
+ACE-Step añade `result.metadata.compute` (`gpu_seconds`, `peak_vram_bytes`) para
+el plan de costos. La API Node registra esos valores junto al tier y la cuota
+del usuario en su log estructurado.
+
 ## ACE-Step 1.5 (GPU)
 
 El paquete oficial vive en GitHub (`acestep`, versión 1.5.0); el paquete
@@ -47,6 +61,8 @@ mapea `prompt`, `lyrics`, `duration_s`, `bpm`, `key`, `seed` y `style_tags`.
 
 En Google Colab: `bash scripts/colab_run.sh` instala todo, levanta el servicio
 en `:8002` y publica una URL `https://*.trycloudflare.com` sin cuenta ni token.
+El notebook `notebooks/colab_t4_ace_step.ipynb` automatiza el arranque en una
+T4 con `ACE_STEP_OFFLOAD=true`.
 
 ## API
 

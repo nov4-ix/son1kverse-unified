@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "fix/**"]
+    branches: [main, fase2, "feat/**", "fix/**"]
   pull_request:
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm --filter @son1k/api lint
       - run: pnpm --filter @son1k/api test
-      - run: pnpm --filter @son1k/web build
+      - run: pnpm build
 
   music-lab:
     name: Music Lab (pytest)
@@ -59,3 +59,75 @@ jobs:
           cache-dependency-path: services/music-lab/requirements.txt
       - run: pip install -r requirements.txt
       - run: pytest -q
+
+  e2e-simulation:
+    name: E2E audio (simulation)
+    runs-on: ubuntu-latest
+    needs: quality
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: son1kverse
+          POSTGRES_PASSWORD: son1kverse
+          POSTGRES_DB: son1kverse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U son1kverse -d son1kverse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://son1kverse:son1kverse@localhost:5432/son1kverse?schema=public
+      JWT_SECRET: ci-only-secret-0123456789-0123456789-abcdef
+      MUSIC_LAB_URL: http://127.0.0.1:8002
+      MUSIC_LAB_MODE: simulation
+      E2E_API_BASE: http://127.0.0.1:3001/api/v1
+      E2E_ENGINE: simulation
+      E2E_DURATION_S: "4"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @son1k/db build
+      - run: pnpm --filter @son1k/shared-types build
+      - run: pnpm --filter @son1k/db exec prisma migrate deploy
+      - run: pip install -r services/music-lab/requirements.txt
+      - name: Start Music Lab
+        working-directory: services/music-lab
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8002 \
+            > /tmp/music-lab.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8002/health && exit 0
+            sleep 1
+          done
+          cat /tmp/music-lab.log
+          exit 1
+      - name: Start API
+        run: |
+          pnpm --filter @son1k/api build
+          nohup node apps/api/dist/server.js > /tmp/api.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3001/health && exit 0
+            sleep 1
+          done
+          cat /tmp/api.log
+          exit 1
+      - name: E2E audio
+        run: pnpm --filter @son1k/api e2e:audio
+      - name: Logs on failure
+        if: failure()
+        run: |
+          echo "--- music-lab.log ---"; tail -n 120 /tmp/music-lab.log || true
+          echo "--- api.log ---"; tail -n 120 /tmp/api.log || true

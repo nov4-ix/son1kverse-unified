@@ -10,6 +10,8 @@
 #   ACE_STEP_MODEL_PATH=...         Checkpoint dir (default: /content/ace-step-models)
 #   ACE_STEP_DEVICE=cuda            cuda | cpu | auto
 #   ACE_STEP_USE_LM=false           true also loads the 5Hz LM (heavier)
+#   ACE_STEP_OFFLOAD=true           CPU offload for 16 GB cards (T4)
+#   ACE_STEP_DTYPE=bfloat16         bfloat16 | float16 | float32
 #   MUSIC_LAB_OUTPUT_DIR=...        Generated audio dir (default: <repo>/outputs)
 #   MUSIC_LAB_API_KEY=...           Enables x-api-key auth on /v1/*
 #   PORT=8002                       Local HTTP port
@@ -24,6 +26,13 @@ PORT="${PORT:-8002}"
 LOG_DIR="${MUSIC_LAB_LOG_DIR:-$ROOT/outputs/colab-logs}"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-/tmp/cloudflared}"
 
+if ! command -v nvidia-smi >/dev/null 2>&1; then
+  echo "[music-lab] No se encontró nvidia-smi: este script requiere una GPU (T4 o superior)." >&2
+  echo "[music-lab] Para CPU usa MUSIC_LAB_MODE=simulation y 'make lab-dev'." >&2
+  exit 1
+fi
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+
 if [[ -d /content ]]; then
   DEFAULT_MODELS="/content/ace-step-models"
 else
@@ -32,8 +41,13 @@ fi
 
 export MUSIC_LAB_MODE="ace-step"
 export MUSIC_LAB_OUTPUT_DIR="${MUSIC_LAB_OUTPUT_DIR:-$ROOT/outputs}"
+export MUSIC_LAB_API_KEY="${MUSIC_LAB_API_KEY:-}"
 export ACE_STEP_MODEL_PATH="${ACE_STEP_MODEL_PATH:-$DEFAULT_MODELS}"
 export ACE_STEP_DEVICE="${ACE_STEP_DEVICE:-cuda}"
+export ACE_STEP_DTYPE="${ACE_STEP_DTYPE:-bfloat16}"
+export ACE_STEP_OFFLOAD="${ACE_STEP_OFFLOAD:-true}"
+export ACE_STEP_USE_LM="${ACE_STEP_USE_LM:-false}"
+export ACE_STEP_CONFIG_PATH="${ACE_STEP_CONFIG_PATH:-acestep-v15-turbo}"
 export ACE_STEP_AUTO_DOWNLOAD="${ACE_STEP_AUTO_DOWNLOAD:-true}"
 
 mkdir -p "$LOG_DIR" "$ACE_STEP_MODEL_PATH"
@@ -88,7 +102,9 @@ trap cleanup EXIT INT TERM
 
 echo "[music-lab] Starting uvicorn in MUSIC_LAB_MODE=$MUSIC_LAB_MODE on :$PORT..."
 (
-  export MUSIC_LAB_MODE ACE_STEP_MODEL_PATH ACE_STEP_DEVICE ACE_STEP_AUTO_DOWNLOAD
+  export MUSIC_LAB_MODE MUSIC_LAB_OUTPUT_DIR MUSIC_LAB_API_KEY
+  export ACE_STEP_MODEL_PATH ACE_STEP_DEVICE ACE_STEP_DTYPE ACE_STEP_OFFLOAD
+  export ACE_STEP_USE_LM ACE_STEP_CONFIG_PATH ACE_STEP_AUTO_DOWNLOAD
   exec "$PYTHON" -m uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
 ) >"$UVICORN_LOG" 2>&1 &
 UVICORN_PID=$!

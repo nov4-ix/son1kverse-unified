@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from pathlib import Path
 from typing import Any
 
 import pytest
 import soundfile as sf
 
+from app.adapters.simulation import SimulationAdapter
 from app.audio import read_audio
 from app.config import Settings
+from app.ham.engine import SectionAnalysis
+from app.ham.key import KeyDetectionResult
+from app.ham.spectral import SpectralProfile
+from app.mastering import MasteringMetrics
 from tests.helpers import make_client, run, submit_and_wait
 
 
@@ -60,6 +66,15 @@ def test_generate_job_and_download(tmp_path: Path) -> None:
             audio, sample_rate = read_audio(Path(result["audio_path"]))
             assert sample_rate == 44100
             assert audio.shape[1] == pytest.approx(44100, abs=2)
+            ham = result["metadata"]["ham"]
+            assert set(ham) >= {
+                "analyzed_s",
+                "detected_key",
+                "detected_bpm",
+                "rms",
+                "spectral",
+            }
+            assert ham["analyzed_s"] == pytest.approx(1.0)
 
             download = await client.get(f"/v1/jobs/{job['job_id']}/audio")
             assert download.status_code == 200
@@ -123,6 +138,61 @@ def test_mastering_is_applied(tmp_path: Path) -> None:
             assert abs(result["metadata"]["mastering"]["output_lufs"] + 14.0) < 0.5
             _, sample_rate = sf.read(result["audio_path"])
             assert sample_rate == 44100
+
+    run(scenario())
+
+
+def test_pipeline_runs_ham_before_mastering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    class FakeAligner:
+        def __init__(self, sample_rate: int) -> None:
+            self.sample_rate = sample_rate
+
+        def analyze(self, audio: Any) -> SectionAnalysis:
+            calls.append("ham")
+            return SectionAnalysis(
+                key=KeyDetectionResult(9, "A", "minor", 0.9),
+                bpm=120.0,
+                bpm_confidence=0.8,
+                rms=0.1,
+                spectral=SpectralProfile(1000.0, 500.0, 2000.0, 0.3),
+            )
+
+    class FakeChain:
+        def __init__(self, sample_rate: int) -> None:
+            self.sample_rate = sample_rate
+
+        def master_file(
+            self, source: Path, target: Path, output_format: Any
+        ) -> tuple[Path, MasteringMetrics]:
+            calls.append("mastering")
+            shutil.copyfile(source, target)
+            return target, MasteringMetrics(-14.0, -14.0, 0.0, -1.0, -1.0, ["eq"])
+
+    monkeypatch.setattr("app.jobs.manager.HarmonicAligner", FakeAligner)
+    monkeypatch.setattr("app.jobs.manager.MasteringChain", FakeChain)
+    original_generate = SimulationAdapter.generate
+
+    async def recording_generate(self: SimulationAdapter, req: Any) -> Any:
+        calls.append("generation")
+        return await original_generate(self, req)
+
+    monkeypatch.setattr(SimulationAdapter, "generate", recording_generate)
+
+    async def scenario() -> None:
+        async with make_client(settings(tmp_path)) as (_, client):
+            job = await submit_and_wait(
+                client,
+                "/v1/generate",
+                {"prompt": "order", "duration_s": 1.0, "master": True},
+            )
+            assert job["status"] == "succeeded"
+            assert job["result"]["metadata"]["ham"]["detected_key"] == "A minor"
+            assert job["result"]["metadata"]["mastering"]["stages"] == ["eq"]
+            assert calls == ["generation", "ham", "mastering"]
 
     run(scenario())
 

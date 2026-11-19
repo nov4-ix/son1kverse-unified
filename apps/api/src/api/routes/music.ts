@@ -135,6 +135,11 @@ function statusForJob(status: MusicLabJob['status']): GenerationStatus {
   }
 }
 
+function readNumber(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
 export async function syncGeneration(
   generation: GenerationRow,
   job: MusicLabJob,
@@ -152,21 +157,67 @@ export async function syncGeneration(
     : null
 
   const nextStatus = statusForJob(job.status)
-  await prisma.generation.update({
-    where: { id: generation.id },
-    data: {
-      status: nextStatus,
-      audioUrl: audioPath ?? undefined,
-      processingStartedAt: startedAt ?? undefined,
-      processingCompletedAt: completedAt ?? undefined,
-      processingTimeMs: processingTimeMs ?? undefined,
-      errorMessage: job.error?.message ?? null,
-    },
-  })
+  const data = {
+    status: nextStatus,
+    audioUrl: audioPath ?? undefined,
+    processingStartedAt: startedAt ?? undefined,
+    processingCompletedAt: completedAt ?? undefined,
+    processingTimeMs: processingTimeMs ?? undefined,
+    errorMessage: job.error?.message ?? null,
+  }
+
+  // Reclama la transición terminal de forma atómica: polling y watcher pueden
+  // sincronizar el mismo job a la vez sin duplicar logs ni reembolsos.
+  let transitioned = true
+  if (nextStatus === GenerationStatus.COMPLETED || nextStatus === GenerationStatus.FAILED) {
+    const { count } = await prisma.generation.updateMany({
+      where: {
+        id: generation.id,
+        status: { notIn: [GenerationStatus.COMPLETED, GenerationStatus.FAILED] },
+      },
+      data,
+    })
+    transitioned = count > 0
+  } else {
+    await prisma.generation.update({ where: { id: generation.id }, data })
+  }
+
+  if (!transitioned) return
 
   if (job.status === 'failed' && generation.status !== GenerationStatus.FAILED) {
     await refundGenerationQuota(generation.userId)
     logger.info({ jobId: job.job_id, userId: generation.userId }, 'Cuota devuelta por job fallido')
+  }
+
+  if (nextStatus === GenerationStatus.COMPLETED && generation.status !== GenerationStatus.COMPLETED) {
+    const metadata = job.result?.metadata ?? {}
+    const compute = metadata['compute']
+    const computeMetrics = typeof compute === 'object' && compute !== null && !Array.isArray(compute)
+      ? compute as Record<string, unknown>
+      : {}
+    const user = await prisma.user.findUnique({
+      where: { id: generation.userId },
+      select: { subscriptionTier: true, role: true },
+    })
+    logger.info(
+      {
+        event:                'generation.completed',
+        jobId:                job.job_id,
+        userId:               generation.userId,
+        tier:                 user?.subscriptionTier ?? null,
+        role:                 user?.role ?? null,
+        quotaConsumed:        1,
+        operation:            job.operation,
+        engine:               job.result?.engine ?? null,
+        mode:                 job.result?.mode ?? null,
+        audioDurationS:       job.result?.duration_s ?? null,
+        processingTimeMs:     processingTimeMs ?? null,
+        gpuSeconds:           readNumber(computeMetrics, 'gpu_seconds'),
+        peakVramBytes:        readNumber(computeMetrics, 'peak_vram_bytes'),
+        requestedDurationS:   metadata['requested_duration_s'] ?? null,
+      },
+      'Generación completada',
+    )
   }
 }
 
@@ -198,7 +249,7 @@ async function startGeneration(
   operation: 'generate' | 'repaint' | 'cover' | 'stems',
   params: Parameters<typeof musicLabClient.generate>[0],
 ): Promise<Record<string, unknown> & { generation_id: string }> {
-  await consumeGenerationQuota(userId)
+  const quota = await consumeGenerationQuota(userId)
 
   try {
     const job = operation === 'generate'
@@ -219,6 +270,24 @@ async function startGeneration(
 
     const generation = await getOwnedGeneration(job.job_id, userId)
     watchGeneration(generation, job.job_id)
+
+    logger.info(
+      {
+        event:               'generation.accepted',
+        jobId:               job.job_id,
+        userId,
+        operation,
+        tier:                quota.tier,
+        role:                quota.role,
+        quotaConsumed:       1,
+        quotaUsed:           quota.used,
+        quotaLimit:          quota.limit,
+        quotaUnlimited:      quota.unlimited,
+        requestedDurationS:  params.duration_s ?? null,
+        engine:              params.engine ?? null,
+      },
+      'Generación aceptada',
+    )
 
     const encoded = encodeURIComponent(job.job_id)
     return {

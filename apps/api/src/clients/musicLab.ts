@@ -129,6 +129,8 @@ export interface MusicLabClientOptions {
   baseUrl?: string
   apiKey?: string
   timeoutMs?: number
+  retries?: number
+  retryBackoffMs?: number
 }
 
 export class MusicLabClientError extends Error {
@@ -177,15 +179,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+const RETRYABLE_STATUS = new Set([429, 502, 503, 504])
+
 export class MusicLabClient {
   private readonly baseUrl: string
   private readonly apiKey: string
   private readonly timeoutMs: number
+  private readonly retries: number
+  private readonly retryBackoffMs: number
 
   constructor(options: MusicLabClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? config.MUSIC_LAB_URL).replace(/\/$/, '')
     this.apiKey = options.apiKey ?? config.MUSIC_LAB_API_KEY
-    this.timeoutMs = options.timeoutMs ?? 15_000
+    this.timeoutMs = options.timeoutMs ?? config.MUSIC_LAB_TIMEOUT_MS
+    this.retries = options.retries ?? config.MUSIC_LAB_RETRIES
+    this.retryBackoffMs = options.retryBackoffMs ?? config.MUSIC_LAB_RETRY_BACKOFF_MS
   }
 
   async health(): Promise<MusicLabServiceHealth> {
@@ -320,21 +328,37 @@ export class MusicLabClient {
     if (init?.body !== undefined && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }
-    try {
-      return await fetch(`${this.baseUrl}${path}`, {
-        ...init,
-        headers,
-        signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      throw new MusicLabClientError(
-        'MUSIC_LAB_UNREACHABLE',
-        `Music Lab is unreachable: ${message}`,
-        502,
-        { cause: message },
-      )
+
+    // Solo las lecturas son idempotentes: reintentar un POST podría crear
+    // jobs duplicados y consumir cuota dos veces.
+    const method = (init?.method ?? 'GET').toUpperCase()
+    const attempts = method === 'GET' || method === 'HEAD' ? this.retries + 1 : 1
+    let lastError: unknown = null
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const response = await fetch(`${this.baseUrl}${path}`, {
+          ...init,
+          headers,
+          signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
+        })
+        const retryable = RETRYABLE_STATUS.has(response.status)
+        if (!retryable || attempt === attempts - 1) return response
+        await response.body?.cancel().catch(() => undefined)
+      } catch (error) {
+        lastError = error
+        if (attempt === attempts - 1 || init?.signal?.aborted) break
+      }
+      await sleep(this.retryBackoffMs * 2 ** attempt)
     }
+
+    const message = lastError instanceof Error ? lastError.message : String(lastError)
+    throw new MusicLabClientError(
+      'MUSIC_LAB_UNREACHABLE',
+      `Music Lab is unreachable: ${message}`,
+      502,
+      { cause: message, retries: attempts - 1 },
+    )
   }
 
   private async readJson(response: Response): Promise<unknown> {

@@ -77,6 +77,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       key: dir.key,
       style_tags: dir.styleTags,
       output_format: 'wav',
+      master: true,
     }, token), dir.arNote)
   }, [knobs, releases.length, runJob, token])
 

@@ -41,6 +41,9 @@ const ConfigSchema = z.object({
   OLLAMA_BASE_URL:     z.string().url().default('http://localhost:11434'),
   MUSIC_LAB_URL:     z.string().url().default('http://127.0.0.1:8002'),
   MUSIC_LAB_API_KEY: z.string().default(''),
+  MUSIC_LAB_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(15_000),
+  MUSIC_LAB_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+  MUSIC_LAB_RETRY_BACKOFF_MS: z.coerce.number().int().min(100).max(10_000).default(500),
 
   PIXEL_DEFAULT_MODEL:  z.string().default('anthropic/claude-3-haiku'),
   PIXEL_ANALYSIS_MODEL: z.string().default('anthropic/claude-3-haiku'),

@@ -13,8 +13,9 @@ Monorepo unificado que consolida la arquitectura backend, el motor neuronal de s
 - **`packages/shared-ui`** (`@son1k/shared-ui`): Componentes vectoriales oficiales (`PlatformLogo`, `AlvaeSymbol`) y controles táctiles (`LiteraryKnob`).
 - **`services/music-lab`**: Microservicio Python 3.11–3.13 + FastAPI aislado para generación de audio soberana (sin dependencias de APIs de terceros):
   - **Motor neuronal:** **ACE-Step 1.5** (generación completa, *repainting* y *covers*), con soporte para checkpoints fine-tuneados. HeartMuLa fue descartado por su consumo de VRAM.
+  - **Pipeline:** ACE-Step → **HAM** (análisis de key/BPM/energía/espectro, acotado a 60 s por track) → **MasteringChain** (-14 LUFS) cuando `master=true`.
   - **DSP Propio:** **HAM** (*Harmonic Alignment Module*) y **`MasteringChain`** (-14 LUFS).
-  - **Modo CPU (`simulation`):** Síntesis determinista en CPU para desarrollo local sin GPU y `Dockerfile.gpu` listo para despliegue Serverless GPU (RunPod / Modal).
+  - **Modo CPU (`simulation`):** Síntesis determinista en CPU para desarrollo local sin GPU y `Dockerfile.gpu` listo para despliegue Serverless GPU (RunPod / Modal). Notebook T4: `services/music-lab/notebooks/colab_t4_ace_step.ipynb`.
 
 ## Requisitos
 
@@ -39,6 +40,10 @@ make db-migrate
 # 4. Levantar Music Lab (:8002), API (:3001) y Web (:5173) a la vez.
 make dev
 ```
+
+`make setup` no crea `services/music-lab/.env`: el laboratorio arranca en
+`simulation` con los defaults. Si necesitas cambiar puerto, salida o motor,
+copia `services/music-lab/.env.example` a `services/music-lab/.env`.
 
 Si PostgreSQL ya está migrado, `make up` ejecuta `setup + db-migrate + dev` en un solo comando.
 

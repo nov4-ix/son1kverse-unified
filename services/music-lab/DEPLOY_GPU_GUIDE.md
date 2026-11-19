@@ -17,6 +17,8 @@ docker run --gpus all \
   -e ACE_STEP_MODEL_PATH=/models/ace-step \
   -e ACE_STEP_DEVICE=cuda \
   -e ACE_STEP_AUTO_DOWNLOAD=true \
+  -e ACE_STEP_OFFLOAD=true \
+  -e MUSIC_LAB_OUTPUT_DIR=/outputs \
   -e MUSIC_LAB_API_KEY="$MUSIC_LAB_API_KEY" \
   -v "$PWD/models:/models" \
   -v "$PWD/outputs:/outputs" \
@@ -82,6 +84,19 @@ actualizar `acestep` y el adapter de forma explícita.
 publica un túnel `*.trycloudflare.com`. Úsalo solo para pruebas: no hay
 autenticación de red más allá de `MUSIC_LAB_API_KEY`.
 
+El notebook `notebooks/colab_t4_ace_step.ipynb` es la ruta recomendada para una
+T4 (16 GB):
+
+1. Activa GPU T4 en *Runtime → Change runtime type*.
+2. Define `REPO_URL` en la primera celda si el repo no está en `/content`.
+3. El notebook arranca `scripts/colab_run.sh` con
+   `ACE_STEP_OFFLOAD=true`, `ACE_STEP_USE_LM=false` y `ACE_STEP_DEVICE=cuda`.
+4. Copia la URL del túnel y úsala como `MUSIC_LAB_URL` en la API Node.
+
+El DiT-only (`ACE_STEP_USE_LM=false`) es el modo que cabe con holgura en T4. El
+LM 5Hz se puede activar con `ACE_STEP_USE_LM=true`, pero reduce margen de VRAM
+y aumenta la latencia.
+
 ## Verificación
 
 ```bash
@@ -98,3 +113,27 @@ make lab-test
 
 La API Node solo necesita `MUSIC_LAB_URL` y, si aplica, `MUSIC_LAB_API_KEY`.
 El motor anterior (`apps/api/audio_engine`) fue retirado.
+
+## Smoke test real
+
+CI ejecuta el flujo E2E en `simulation` (sin GPU). Para validar ACE-Step real:
+
+```bash
+# Music Lab en la GPU/Colab con ACE_STEP_OFFLOAD=true y ACE_STEP_USE_LM=false
+export MUSIC_LAB_URL="https://<tu-tunel>.trycloudflare.com"
+export MUSIC_LAB_API_KEY="<clave>"
+# API Node local con PostgreSQL migrado
+E2E_ENGINE=ace-step E2E_DURATION_S=30 \
+  node apps/api/scripts/e2e-audio.mjs
+```
+
+El script autentica, verifica `/music/health`, genera, hace polling, descarga el
+WAV autenticado y exige `metadata.ham`; con `master=true`, también exige
+`metadata.mastering`. El reporte incluye `metadata.compute` (`gpu_seconds`,
+`peak_vram_bytes`) para estimar costos de RunPod/Modal.
+
+Cada generación deja dos logs estructurados en la API Node:
+
+- `generation.accepted`: job, usuario, tier, cuota consumida y límite.
+- `generation.completed`: duración del audio, `gpu_seconds`, `peak_vram_bytes`,
+  motor/modo y tiempo total de procesamiento.

@@ -8,6 +8,7 @@ const prismaMock = {
     create: vi.fn(),
     findUnique: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
   },
   user: {
     findUnique: vi.fn(),
@@ -68,6 +69,7 @@ describe('auth global y cuota de música', () => {
       processingTimeMs: null,
     })
     prismaMock.generation.update.mockResolvedValue({})
+    prismaMock.generation.updateMany.mockResolvedValue({ count: 1 })
     musicLabMock.generate.mockResolvedValue(job)
   })
 
@@ -151,5 +153,34 @@ describe('auth global y cuota de música', () => {
     )
 
     expect(prismaMock.$executeRaw).toHaveBeenCalledTimes(1)
+  })
+
+  it('no duplica el cierre si el mismo job se sincroniza dos veces', async () => {
+    const generation = {
+      id: 'gen-1',
+      userId: 'user-1',
+      status: 'PROCESSING',
+      processingStartedAt: new Date(),
+      processingCompletedAt: null,
+      processingTimeMs: null,
+    }
+    const completed = {
+      ...job,
+      status: 'succeeded',
+      result: {
+        audio_path: '/outputs/gen-1.wav',
+        engine: 'simulation',
+        mode: 'simulation',
+        duration_s: 4,
+        metadata: { ham: { detected_key: 'Am', detected_bpm: 112 } },
+      },
+    }
+
+    await syncGeneration(generation, completed as typeof job)
+    prismaMock.generation.updateMany.mockResolvedValue({ count: 0 })
+    await syncGeneration(generation, completed as typeof job)
+
+    expect(prismaMock.generation.updateMany).toHaveBeenCalledTimes(2)
+    expect(prismaMock.user.findUnique).toHaveBeenCalledTimes(1)
   })
 })

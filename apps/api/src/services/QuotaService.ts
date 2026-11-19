@@ -14,12 +14,16 @@ export type QuotaState = {
   used: number
   limit: number
   unlimited: boolean
+  tier: string
+  role: string
 }
 
 type QuotaRow = {
   generationsUsedThisMonth: number
   generationsLimit: number
   isAdmin: boolean
+  tier: string
+  role: string
 }
 
 export async function consumeGenerationQuota(userId: string): Promise<QuotaState> {
@@ -48,7 +52,9 @@ export async function consumeGenerationQuota(userId: string): Promise<QuotaState
     RETURNING
       "generationsUsedThisMonth",
       "generationsLimit",
-      ("role" = 'ADMIN') AS "isAdmin"
+      ("role" = 'ADMIN') AS "isAdmin",
+      "subscriptionTier" AS "tier",
+      "role"
   `
 
   const row = rows[0]
@@ -57,6 +63,8 @@ export async function consumeGenerationQuota(userId: string): Promise<QuotaState
       used: row.generationsUsedThisMonth,
       limit: row.generationsLimit,
       unlimited: row.isAdmin && config.ADMIN_UNLIMITED,
+      tier: row.tier,
+      role: row.role,
     }
   }
 
