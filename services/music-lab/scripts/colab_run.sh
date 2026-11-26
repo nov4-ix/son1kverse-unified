@@ -45,6 +45,12 @@ fi
 export MUSIC_LAB_MODE="ace-step"
 export MUSIC_LAB_OUTPUT_DIR="${MUSIC_LAB_OUTPUT_DIR:-$ROOT/outputs}"
 export MUSIC_LAB_API_KEY="${MUSIC_LAB_API_KEY:-}"
+# El motor real exige API key (config.py falla al arrancar sin ella). Si no hay, se genera una.
+if [ -z "$MUSIC_LAB_API_KEY" ]; then
+  MUSIC_LAB_API_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+  export MUSIC_LAB_API_KEY
+  echo "MUSIC_LAB_API_KEY generada para esta sesion: $MUSIC_LAB_API_KEY"
+fi
 export ACE_STEP_MODEL_PATH="${ACE_STEP_MODEL_PATH:-$DEFAULT_MODELS}"
 export ACE_STEP_DEVICE="${ACE_STEP_DEVICE:-cuda}"
 export ACE_STEP_DTYPE="${ACE_STEP_DTYPE:-bfloat16}"

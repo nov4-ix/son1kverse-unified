@@ -9,7 +9,7 @@ services:
       MUSIC_LAB_MODE: ace-step
       MUSIC_LAB_OUTPUT_DIR: /outputs
       MUSIC_LAB_MAX_CONCURRENCY: "1"
-      MUSIC_LAB_API_KEY: ${MUSIC_LAB_API_KEY:-}
+      MUSIC_LAB_API_KEY: ${MUSIC_LAB_API_KEY:?define MUSIC_LAB_API_KEY (obligatoria)}
       ACE_STEP_MODEL_PATH: /models/ace-step
       ACE_STEP_DEVICE: cuda
       ACE_STEP_DTYPE: ${ACE_STEP_DTYPE:-bfloat16}
@@ -17,7 +17,7 @@ services:
       ACE_STEP_USE_LM: ${ACE_STEP_USE_LM:-false}
       ACE_STEP_CONFIG_PATH: ${ACE_STEP_CONFIG_PATH:-acestep-v15-turbo}
     ports:
-      - "8002:8002"
+      - "127.0.0.1:8002:8002"   # no exponer a toda la red; usa un proxy TLS delante
     volumes:
       - ./models:/models:ro
       - ./outputs:/outputs

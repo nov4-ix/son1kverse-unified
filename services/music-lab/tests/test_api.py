@@ -387,3 +387,18 @@ def test_quality_preset_is_validated_before_queue(
             assert details["available_vram_gb"] is None
 
     run(scenario())
+
+
+def test_ace_step_requires_api_key() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, music_lab_mode="ace-step", music_lab_api_key=None)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, music_lab_mode="ace-step", music_lab_api_key="   ")
+    assert Settings(_env_file=None, music_lab_mode="ace-step", music_lab_api_key="k").music_lab_api_key == "k"
+    assert Settings(_env_file=None, music_lab_mode="ace-step", music_lab_allow_no_auth=True).music_lab_mode == "ace-step"
+    assert Settings(_env_file=None, music_lab_mode="simulation").music_lab_api_key is None

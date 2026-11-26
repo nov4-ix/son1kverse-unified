@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ServiceMode = Literal["simulation", "ace-step", "auto"]
@@ -85,6 +85,8 @@ class Settings(BaseSettings):
 
     music_lab_mode: ServiceMode = "simulation"
     music_lab_api_key: str | None = None
+    # Solo para desarrollo local: permite el motor real sin API key.
+    music_lab_allow_no_auth: bool = False
     music_lab_output_dir: Path = Path("outputs")
     music_lab_max_concurrency: int = Field(default=1, ge=1, le=8)
     music_lab_allow_sim_fallback: bool = False
@@ -129,6 +131,17 @@ class Settings(BaseSettings):
             return None
         text = str(value).strip()
         return text or None
+
+    @model_validator(mode="after")
+    def _require_api_key_for_real_engine(self) -> "Settings":
+        """El motor real consume GPU de pago: sin API key cualquiera podría usarlo."""
+        has_key = bool((self.music_lab_api_key or "").strip())
+        if self.music_lab_mode == "ace-step" and not has_key and not self.music_lab_allow_no_auth:
+            raise ValueError(
+                "MUSIC_LAB_API_KEY es obligatoria con MUSIC_LAB_MODE=ace-step "
+                "(solo en desarrollo local: MUSIC_LAB_ALLOW_NO_AUTH=true)"
+            )
+        return self
 
     def ensure_output_dir(self) -> Path:
         self.music_lab_output_dir.mkdir(parents=True, exist_ok=True)
