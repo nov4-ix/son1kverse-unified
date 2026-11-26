@@ -12,6 +12,7 @@
     }
   },
   "scripts": {
+    "prebuild": "prisma generate",
     "build": "tsc -p tsconfig.json",
     "postinstall": "prisma generate",
     "prisma:validate": "DATABASE_URL=${DATABASE_URL:-postgresql://son1kverse:son1kverse@localhost:5432/son1kverse?schema=public} prisma validate",

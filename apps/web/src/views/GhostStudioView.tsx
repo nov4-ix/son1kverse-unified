@@ -55,6 +55,7 @@ export function GhostStudioView() {
     repaint,
     cover,
     splitStems,
+    capabilities,
   } = useStudio()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { buffer } = useAuthorizedAudio(lastAudioUrl)
@@ -104,6 +105,7 @@ export function GhostStudioView() {
     drawWaveform(canvas, peaks, startS / safeDuration, endS / safeDuration)
   }, [duration, endS, peaks, startS])
 
+  const stemsSupported = capabilities.supports_stems
   const jobResult = job?.result ?? null
   const stems = isStemsResult(jobResult) ? jobResult.stems : undefined
 
@@ -186,7 +188,12 @@ export function GhostStudioView() {
         >
           <p className="font-terminal text-xs uppercase tracking-[0.2em] text-alvae-gold">Stems</p>
           <p className="font-terminal text-[10px] text-alvae-muted">drums / bass / other</p>
-          <button type="submit" disabled={busy} className="border border-alvae-gold px-3 py-2 font-terminal text-[10px] uppercase tracking-[0.2em] text-alvae-gold">
+          {!stemsSupported && (
+            <p className="font-terminal text-[10px] text-amber-300">
+              Separación de stems no disponible con el motor activo ({capabilities.active_engine}).
+            </p>
+          )}
+          <button type="submit" disabled={busy || !stemsSupported} className="border border-alvae-gold px-3 py-2 font-terminal text-[10px] uppercase tracking-[0.2em] text-alvae-gold disabled:opacity-40">
             Separar
           </button>
           {lastJobId !== null && stems !== undefined && (

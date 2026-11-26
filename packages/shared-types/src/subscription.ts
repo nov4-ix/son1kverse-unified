@@ -4,9 +4,15 @@
 
 export type SubscriptionTierName = 'FREE' | 'STARTER' | 'PRO' | 'ENTERPRISE'
 
+export type QualityPresetName = 'turbo' | 'xl_turbo'
+
+export const DEFAULT_QUALITY_PRESET: QualityPresetName = 'turbo'
+
 export type SubscriptionLimits = {
   generationsPerMonth: number
   storageLimitBytes: number
+  allowedQualityPresets: readonly QualityPresetName[]
+  defaultQualityPreset: QualityPresetName
 }
 
 export type SubscriptionPlan = SubscriptionLimits & {
@@ -20,25 +26,35 @@ export type SubscriptionPlan = SubscriptionLimits & {
   highlighted: boolean
 }
 
-// Prisma Int es int4; este valor funciona como "sin límite" práctico.
+// Prisma Int es int4; reservado para el bootstrap de ADMIN (create-admin.ts).
+// Los planes comerciales usan topes mensuales finitos para proteger la GPU.
 export const UNLIMITED_GENERATIONS = 2_147_483_647
+export const ENTERPRISE_GENERATIONS_PER_MONTH = 5_000
 
 export const SUBSCRIPTION_LIMITS: Record<SubscriptionTierName, SubscriptionLimits> = {
   FREE: {
     generationsPerMonth: 3,
     storageLimitBytes: 1_073_741_824,
+    allowedQualityPresets: ['turbo'],
+    defaultQualityPreset: 'turbo',
   },
   STARTER: {
     generationsPerMonth: 100,
     storageLimitBytes: 10_737_418_240,
+    allowedQualityPresets: ['turbo', 'xl_turbo'],
+    defaultQualityPreset: 'turbo',
   },
   PRO: {
     generationsPerMonth: 500,
     storageLimitBytes: 53_687_091_200,
+    allowedQualityPresets: ['turbo', 'xl_turbo'],
+    defaultQualityPreset: 'turbo',
   },
   ENTERPRISE: {
-    generationsPerMonth: UNLIMITED_GENERATIONS,
+    generationsPerMonth: ENTERPRISE_GENERATIONS_PER_MONTH,
     storageLimitBytes: 536_870_912_000,
+    allowedQualityPresets: ['turbo', 'xl_turbo'],
+    defaultQualityPreset: 'turbo',
   },
 }
 
@@ -50,6 +66,25 @@ export function generationLimitForTier(tier: SubscriptionTierName): number {
 
 export function storageLimitForTier(tier: SubscriptionTierName): number {
   return SUBSCRIPTION_LIMITS[tier].storageLimitBytes
+}
+
+export function allowedQualityPresetsForTier(tier: SubscriptionTierName): readonly QualityPresetName[] {
+  return SUBSCRIPTION_LIMITS[tier].allowedQualityPresets
+}
+
+export function defaultQualityPresetForTier(tier: SubscriptionTierName): QualityPresetName {
+  return SUBSCRIPTION_LIMITS[tier].defaultQualityPreset
+}
+
+export function isQualityPresetAllowedForTier(
+  tier: SubscriptionTierName,
+  preset: string,
+): preset is QualityPresetName {
+  return (SUBSCRIPTION_LIMITS[tier].allowedQualityPresets as readonly string[]).includes(preset)
+}
+
+export function isXlQualityPreset(preset: string | null | undefined): boolean {
+  return preset === 'xl_turbo'
 }
 
 export function isUnlimitedTier(tier: SubscriptionTierName): boolean {
@@ -65,7 +100,7 @@ export const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = [
     period: '/mes',
     description: 'Comienza tu viaje musical',
     ...SUBSCRIPTION_LIMITS.FREE,
-    features: ['3 generaciones/mes', 'Calidad estándar', 'Uso personal'],
+    features: ['3 generaciones/mes', 'Modelo 1.5 estándar (turbo)', 'Uso personal'],
     highlighted: false,
   },
   {
@@ -76,7 +111,7 @@ export const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = [
     period: '/mes',
     description: 'Para creadores activos',
     ...SUBSCRIPTION_LIMITS.STARTER,
-    features: ['100 generaciones/mes', 'Calidad alta', 'Uso comercial'],
+    features: ['100 generaciones/mes', 'Modelos 1.5 y XL (xl_turbo)', 'Uso comercial'],
     highlighted: false,
   },
   {
@@ -87,7 +122,7 @@ export const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = [
     period: '/mes',
     description: 'Para profesionales',
     ...SUBSCRIPTION_LIMITS.PRO,
-    features: ['500 generaciones/mes', 'Descarga de stems', 'API incluida'],
+    features: ['500 generaciones/mes', 'Modelos 1.5 y XL (xl_turbo)', 'API incluida'],
     highlighted: true,
   },
   {
@@ -98,7 +133,7 @@ export const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = [
     period: '',
     description: 'Soluciones a medida',
     ...SUBSCRIPTION_LIMITS.ENTERPRISE,
-    features: ['Ilimitado', 'API dedicada', 'Soporte 24/7'],
+    features: ['5,000 generaciones/mes', 'Modelos 1.5 y XL dedicados', 'Soporte 24/7'],
     highlighted: false,
   },
 ]

@@ -244,8 +244,9 @@ model Generation {
   processingCompletedAt DateTime?
   processingTimeMs      Int?
 
-  modelVersion String?
-  seedValue    Int?
+  modelVersion  String?
+  qualityPreset String?
+  seedValue     Int?
 
   audioUrl       String?
   waveformUrl    String?

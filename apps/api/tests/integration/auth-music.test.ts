@@ -27,7 +27,12 @@ const musicLabMock = {
 vi.mock('../../src/storage/client.js', () => ({ prisma: prismaMock }))
 vi.mock('../../src/clients/musicLab.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/clients/musicLab.js')>()
-  return { ...actual, musicLabClient: musicLabMock }
+  return {
+    ...actual,
+    musicLabClient: musicLabMock,
+    musicLabXlClient: musicLabMock,
+    getMusicLabClient: () => musicLabMock,
+  }
 })
 
 const { buildServer } = await import('../../src/api/server.js')
@@ -59,14 +64,21 @@ describe('auth global y cuota de música', () => {
       { generationsUsedThisMonth: 1, generationsLimit: 3, isAdmin: false },
     ])
     prismaMock.$executeRaw.mockResolvedValue(1)
+    prismaMock.user.findUnique.mockResolvedValue({
+      subscriptionTier: 'FREE',
+      role: 'USER',
+    })
     prismaMock.generation.create.mockResolvedValue({ id: 'gen-1' })
     prismaMock.generation.findUnique.mockResolvedValue({
       id: 'gen-1',
       userId: 'user-1',
       status: 'QUEUED',
+      qualityPreset: 'turbo',
+      modelVersion: 'turbo',
       processingStartedAt: null,
       processingCompletedAt: null,
       processingTimeMs: null,
+      audioUrl: null,
     })
     prismaMock.generation.update.mockResolvedValue({})
     prismaMock.generation.updateMany.mockResolvedValue({ count: 1 })
@@ -124,9 +136,12 @@ describe('auth global y cuota de música', () => {
       id: 'gen-1',
       userId: 'intruso',
       status: 'QUEUED',
+      qualityPreset: 'turbo',
+      modelVersion: 'turbo',
       processingStartedAt: null,
       processingCompletedAt: null,
       processingTimeMs: null,
+      audioUrl: null,
     })
 
     const response = await app.inject({

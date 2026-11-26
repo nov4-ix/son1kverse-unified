@@ -15,6 +15,11 @@ const BooleanFromString = z
   .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
   .transform((value) => value === true || value === 'true' || value === '1')
 
+const OptionalUrlFromEnv = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().url().optional(),
+)
+
 const ConfigSchema = z.object({
   NODE_ENV:    z.enum(['development', 'production', 'test']).default('development'),
   PORT:        z.coerce.number().default(3001),
@@ -40,6 +45,7 @@ const ConfigSchema = z.object({
   OPENROUTER_API_KEY:  z.string().optional(),
   OLLAMA_BASE_URL:     z.string().url().default('http://localhost:11434'),
   MUSIC_LAB_URL:     z.string().url().default('http://127.0.0.1:8002'),
+  MUSIC_LAB_XL_URL:  OptionalUrlFromEnv,
   MUSIC_LAB_API_KEY: z.string().default(''),
   MUSIC_LAB_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(15_000),
   MUSIC_LAB_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
@@ -62,7 +68,11 @@ const ConfigSchema = z.object({
 
   LOG_LEVEL:       z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
   SYSTEM_VERSION:  z.string().default('0.1.0'),
-})
+}).transform((data) => ({
+  ...data,
+  // En desarrollo local (o sin nodo XL dedicado), MUSIC_LAB_XL_URL cae a MUSIC_LAB_URL.
+  MUSIC_LAB_XL_URL: data.MUSIC_LAB_XL_URL ?? data.MUSIC_LAB_URL,
+}))
 
 function loadConfig() {
   const result = ConfigSchema.safeParse(process.env)

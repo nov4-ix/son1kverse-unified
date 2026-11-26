@@ -19,6 +19,7 @@ const PUBLIC_API_PATHS = new Set([
   '/api/v1/auth/register',
   '/api/v1/auth/login',
   '/api/v1/music/health',
+  '/api/v1/music/capabilities',
 ])
 
 function corsOrigins(): string[] {

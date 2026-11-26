@@ -8,7 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc --outDir dist",
     "start": "node dist/server.js",
-    "pretest": "pnpm --filter @son1k/shared-types build",
+    "pretest": "pnpm --filter @son1k/db build && pnpm --filter @son1k/shared-types build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:run": "vitest run",

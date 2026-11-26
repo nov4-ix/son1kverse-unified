@@ -7,9 +7,23 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { GenerationStatus } from '@son1k/db'
-import { successResponse } from '../../core/contracts.js'
-import { ForbiddenError, NotFoundError, Son1kverseError, ValidationError } from '../../core/errors.js'
 import {
+  allowedQualityPresetsForTier,
+  defaultQualityPresetForTier,
+  isQualityPresetAllowedForTier,
+  type QualityPresetName,
+  type SubscriptionTierName,
+} from '@son1k/shared-types'
+import { successResponse } from '../../core/contracts.js'
+import {
+  ForbiddenError,
+  NotFoundError,
+  Son1kverseError,
+  TierUpgradeRequiredError,
+  ValidationError,
+} from '../../core/errors.js'
+import {
+  getMusicLabClient,
   MusicLabClientError,
   musicLabClient,
   type MusicLabJob,
@@ -37,7 +51,7 @@ const MusicLabGenerateSchema = z.object({
   output_format:        z.enum(['wav', 'mp3']).default('wav'),
   master:               z.boolean().default(false),
   engine:               z.enum(['simulation', 'ace-step']).nullable().optional(),
-  quality_preset:       z.string().min(1).max(32).optional(),
+  quality_preset:       z.string().trim().min(1).max(32).nullable().optional(),
 })
 
 const MusicLabRepaintSchema = MusicLabGenerateSchema.extend({
@@ -64,6 +78,66 @@ const AudioQuerySchema = z.object({
   stem: MusicLabStemSchema.optional(),
 })
 
+const optionalIntParam = (schema: z.ZodNumber) =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema.optional(),
+  )
+
+const ListGenerationsQuerySchema = z.object({
+  limit:  optionalIntParam(z.coerce.number().int().min(1).max(100)),
+  offset: optionalIntParam(z.coerce.number().int().min(0)),
+})
+
+const DEFAULT_GENERATIONS_LIMIT = 20
+
+type GenerationHistoryStatus =
+  | 'pending'
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+function historyStatusForGeneration(status: GenerationStatus): GenerationHistoryStatus {
+  switch (status) {
+    case GenerationStatus.COMPLETED:
+      return 'completed'
+    case GenerationStatus.PROCESSING:
+      return 'running'
+    case GenerationStatus.FAILED:
+      return 'failed'
+    case GenerationStatus.CANCELLED:
+      return 'cancelled'
+    case GenerationStatus.QUEUED:
+      return 'queued'
+    case GenerationStatus.PENDING:
+    default:
+      return 'pending'
+  }
+}
+
+function historyAudioUrl(row: {
+  status: GenerationStatus
+  externalJobId: string | null
+  audioUrl: string | null
+}): string | null {
+  const ready = row.status === GenerationStatus.COMPLETED
+    || (
+      row.audioUrl !== null
+      && row.status !== GenerationStatus.FAILED
+      && row.status !== GenerationStatus.CANCELLED
+    )
+  if (!ready) return null
+  if (row.externalJobId !== null && row.externalJobId !== '') {
+    return `/api/v1/music/jobs/${encodeURIComponent(row.externalJobId)}/audio`
+  }
+  if (row.audioUrl !== null && /^https?:\/\//i.test(row.audioUrl)) {
+    return row.audioUrl
+  }
+  return null
+}
+
 function rethrowUpstream(error: unknown): never {
   if (error instanceof MusicLabClientError) {
     const status = error.status >= 400 && error.status <= 599 ? error.status : 502
@@ -76,10 +150,32 @@ type GenerationRow = {
   id: string
   userId: string
   status: string
+  qualityPreset?: string | null
+  modelVersion?: string | null
   processingStartedAt: Date | null
   processingCompletedAt: Date | null
   processingTimeMs: number | null
-  audioUrl: string | null
+  audioUrl?: string | null
+}
+
+export function resolveQualityPresetForTier(
+  tier: SubscriptionTierName,
+  requested?: string | null,
+): QualityPresetName {
+  const allowed = allowedQualityPresetsForTier(tier)
+  if (requested === undefined || requested === null) {
+    return defaultQualityPresetForTier(tier)
+  }
+  if (!isQualityPresetAllowedForTier(tier, requested)) {
+    throw new TierUpgradeRequiredError(requested, tier, allowed)
+  }
+  return requested
+}
+
+function presetForGeneration(
+  generation: Pick<GenerationRow, 'qualityPreset' | 'modelVersion'>,
+): string | null {
+  return generation.qualityPreset ?? generation.modelVersion ?? null
 }
 
 async function getOwnedGeneration(jobId: string, userId: string): Promise<GenerationRow> {
@@ -89,6 +185,8 @@ async function getOwnedGeneration(jobId: string, userId: string): Promise<Genera
       id: true,
       userId: true,
       status: true,
+      qualityPreset: true,
+      modelVersion: true,
       processingStartedAt: true,
       processingCompletedAt: true,
       processingTimeMs: true,
@@ -104,7 +202,15 @@ async function recordGeneration(
   userId: string,
   jobId: string,
   operation: 'generate' | 'repaint' | 'cover' | 'stems',
-  params: { prompt: string; duration_s?: number | undefined; bpm?: number | undefined; key?: string | undefined; style_tags?: string[] | undefined; engine?: string | null | undefined },
+  params: {
+    prompt: string
+    duration_s?: number | undefined
+    bpm?: number | undefined
+    key?: string | undefined
+    style_tags?: string[] | undefined
+    engine?: string | null | undefined
+    quality_preset: QualityPresetName
+  },
 ): Promise<string> {
   const generation = await prisma.generation.create({
     data: {
@@ -118,7 +224,8 @@ async function recordGeneration(
       style: params.style_tags?.join(', ') ?? null,
       genre: params.style_tags?.[0] ?? null,
       status: GenerationStatus.QUEUED,
-      modelVersion: params.engine ?? 'music-lab',
+      modelVersion: params.engine ?? params.quality_preset,
+      qualityPreset: params.quality_preset,
       errorMessage: operation === 'generate' ? null : `operation=${operation}`,
     },
     select: { id: true },
@@ -224,7 +331,11 @@ export async function syncGeneration(
       'Generación completada',
     )
 
-    await archiveGenerationAudio(generation.userId, job)
+    await archiveGenerationAudio(
+      generation.userId,
+      job,
+      presetForGeneration(generation),
+    )
   }
 }
 
@@ -233,11 +344,12 @@ export async function syncGeneration(
 function watchGeneration(generation: GenerationRow, jobId: string): void {
   if (config.NODE_ENV === 'test') return
 
+  const client = getMusicLabClient(presetForGeneration(generation))
   const deadline = Date.now() + 24 * 60 * 60 * 1000
   const tick = async (): Promise<void> => {
     if (Date.now() > deadline) return
     try {
-      const job = await musicLabClient.getJob(jobId)
+      const job = await client.getJob(jobId)
       await syncGeneration(generation, job)
       if (job.status === 'succeeded' || job.status === 'failed') return
     } catch (error) {
@@ -256,20 +368,31 @@ async function startGeneration(
   operation: 'generate' | 'repaint' | 'cover' | 'stems',
   params: Parameters<typeof musicLabClient.generate>[0],
 ): Promise<Record<string, unknown> & { generation_id: string }> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { subscriptionTier: true },
+  })
+  if (user === null) throw new NotFoundError('Usuario no encontrado')
+
+  const tier = user.subscriptionTier as SubscriptionTierName
+  const qualityPreset = resolveQualityPresetForTier(tier, params.quality_preset)
+  const upstreamParams = { ...params, quality_preset: qualityPreset }
+  const client = getMusicLabClient(qualityPreset)
+
   const quota = await consumeGenerationQuota(userId)
 
   try {
     const job = operation === 'generate'
-      ? await musicLabClient.generate(params)
+      ? await client.generate(upstreamParams)
       : operation === 'repaint'
-        ? await musicLabClient.repaint(params as Parameters<typeof musicLabClient.repaint>[0])
+        ? await client.repaint(upstreamParams as Parameters<typeof client.repaint>[0])
         : operation === 'cover'
-          ? await musicLabClient.cover(params as Parameters<typeof musicLabClient.cover>[0])
-          : await musicLabClient.stems(params as Parameters<typeof musicLabClient.stems>[0])
+          ? await client.cover(upstreamParams as Parameters<typeof client.cover>[0])
+          : await client.stems(upstreamParams as Parameters<typeof client.stems>[0])
 
     let generationId: string
     try {
-      generationId = await recordGeneration(userId, job.job_id, operation, params)
+      generationId = await recordGeneration(userId, job.job_id, operation, upstreamParams)
     } catch (error) {
       await refundGenerationQuota(userId)
       throw error
@@ -290,8 +413,10 @@ async function startGeneration(
         quotaUsed:           quota.used,
         quotaLimit:          quota.limit,
         quotaUnlimited:      quota.unlimited,
-        requestedDurationS:  params.duration_s ?? null,
-        engine:              params.engine ?? null,
+        requestedDurationS:  upstreamParams.duration_s ?? null,
+        engine:              upstreamParams.engine ?? null,
+        qualityPreset,
+        musicLabUrl:         client.targetUrl,
       },
       'Generación aceptada',
     )
@@ -299,6 +424,7 @@ async function startGeneration(
     const encoded = encodeURIComponent(job.job_id)
     return {
       ...job,
+      quality_preset: qualityPreset,
       generation_id: generationId,
       job_url:   `/api/v1/music/jobs/${encoded}`,
       audio_url: `/api/v1/music/jobs/${encoded}/audio`,
@@ -312,7 +438,76 @@ async function startGeneration(
 }
 
 export async function musicRoutes(app: FastifyInstance): Promise<void> {
-  // GET /api/v1/music/health — salud del único motor de audio (público).
+  const GenerationsQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    offset: z.coerce.number().int().min(0).default(0),
+  })
+
+  // GET /api/v1/music/capabilities — capacidades del motor activo (público).
+  app.get("/music/capabilities", async (_req, reply) => {
+    try {
+      const caps = await musicLabClient.capabilities()
+      const supportsStems = caps.active_engine === "simulation" && caps.methods.includes("stems")
+      const activeMethods = supportsStems
+        ? caps.methods
+        : caps.methods.filter((m) => m !== "stems")
+      return reply.status(200).send(
+        successResponse({
+          ...caps,
+          supports_stems: supportsStems,
+          active_methods: activeMethods,
+        }),
+      )
+    } catch (error) {
+      rethrowUpstream(error)
+    }
+  })
+
+  // GET /api/v1/music/generations — historial paginado del usuario autenticado.
+  app.get("/music/generations", async (req, reply) => {
+    const parsed = GenerationsQuerySchema.safeParse(req.query)
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.flatten())
+    }
+    const userId = getAuthUserId(req)
+    const { limit, offset } = parsed.data
+
+    const [rows, total] = await Promise.all([
+      prisma.generation.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.generation.count({ where: { userId } }),
+    ])
+
+    const items = rows.map((row) => ({
+      id: row.id,
+      externalJobId: row.externalJobId,
+      prompt: row.prompt,
+      status: String(row.status).toLowerCase() === "processing" ? "running" : String(row.status).toLowerCase(),
+      qualityPreset: row.qualityPreset ?? null,
+      modelVersion: row.modelVersion ?? null,
+      durationS: row.durationS ?? row.duration ?? null,
+      bpm: row.bpm ?? row.tempo ?? null,
+      musicalKey: row.musicalKey ?? row.key ?? null,
+      audioUrl: historyAudioUrl(row),
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+    }))
+
+    return reply.status(200).send(
+      successResponse({
+        items,
+        total,
+        limit,
+        offset,
+        hasMore: offset + items.length < total,
+      }),
+    )
+  })
+
+    // GET /api/v1/music/health — salud del único motor de audio (público).
   app.get('/music/health', async (_req, reply) => {
     try {
       const health = await musicLabClient.health()
@@ -362,7 +557,8 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
     const generation = await getOwnedGeneration(params.data.jobId, userId)
 
     try {
-      const job = await musicLabClient.getJob(params.data.jobId)
+      const client = getMusicLabClient(presetForGeneration(generation))
+      const job = await client.getJob(params.data.jobId)
       await syncGeneration(generation, job)
 
       let downloadUrl: string | null = null
@@ -396,7 +592,8 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       const stem: MusicLabStem | undefined = query.data.stem
-      const audio = await musicLabClient.getAudio(params.data.jobId, stem)
+      const client = getMusicLabClient(presetForGeneration(generation))
+      const audio = await client.getAudio(params.data.jobId, stem)
       const fallbackName = audio.contentType.includes('mpeg')
         ? `${params.data.jobId}.mp3`
         : `${params.data.jobId}.wav`

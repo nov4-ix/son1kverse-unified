@@ -171,6 +171,18 @@
             "title": "Prompt",
             "type": "string"
           },
+          "quality_preset": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Preset"
+          },
           "reference_audio_path": {
             "anyOf": [
               {
@@ -300,6 +312,18 @@
             "minLength": 1,
             "title": "Prompt",
             "type": "string"
+          },
+          "quality_preset": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Preset"
           },
           "reference_audio_path": {
             "anyOf": [
@@ -582,6 +606,18 @@
             "title": "Prompt",
             "type": "string"
           },
+          "quality_preset": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Preset"
+          },
           "reference_audio_path": {
             "anyOf": [
               {
@@ -740,6 +776,18 @@
             "minLength": 1,
             "title": "Prompt",
             "type": "string"
+          },
+          "quality_preset": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Preset"
           },
           "reference_audio_path": {
             "anyOf": [

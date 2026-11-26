@@ -5,7 +5,7 @@
 // se avisa en logs: la generación ya se pagó y no debe perderse.
 
 import type { MusicLabJob } from '../clients/musicLab.js'
-import { musicLabClient } from '../clients/musicLab.js'
+import { getMusicLabClient } from '../clients/musicLab.js'
 import { logger } from '../lib/logger.js'
 import { prisma } from '../storage/client.js'
 import { r2 } from '../storage/r2.js'
@@ -39,6 +39,7 @@ function audioExtension(contentType: string, filename: string | null): 'mp3' | '
 export async function archiveGenerationAudio(
   userId: string,
   job: MusicLabJob,
+  qualityPreset?: string | null,
 ): Promise<void> {
   if (job.status !== 'succeeded' || job.result === null || !('audio_path' in job.result)) {
     return
@@ -75,9 +76,9 @@ export async function archiveGenerationAudio(
     return
   }
 
-  let audio: Awaited<ReturnType<typeof musicLabClient.getAudio>>
+  let audio: Awaited<ReturnType<ReturnType<typeof getMusicLabClient>['getAudio']>>
   try {
-    audio = await musicLabClient.getAudio(job.job_id)
+    audio = await getMusicLabClient(qualityPreset).getAudio(job.job_id)
   } catch (error) {
     logger.error(
       { event: 'storage.download_failed', jobId: job.job_id, error },

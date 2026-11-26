@@ -1,5 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MusicLabClient } from '../../src/clients/musicLab.js'
+
+vi.mock('../../src/config/index.js', () => ({
+  config: {
+    MUSIC_LAB_URL: 'http://music-lab-standard.test',
+    MUSIC_LAB_XL_URL: 'http://music-lab-xl.test',
+    MUSIC_LAB_API_KEY: '',
+    MUSIC_LAB_TIMEOUT_MS: 1_000,
+    MUSIC_LAB_RETRIES: 1,
+    MUSIC_LAB_RETRY_BACKOFF_MS: 100,
+  },
+}))
+
+import {
+  getMusicLabClient,
+  MusicLabClient,
+  musicLabClient,
+  musicLabXlClient,
+} from '../../src/clients/musicLab.js'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -63,5 +80,19 @@ describe('MusicLabClient', () => {
       status: 502,
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('selecciona el cliente estándar para turbo y el cliente XL para xl_turbo', () => {
+    expect(musicLabClient.targetUrl).toBe('http://music-lab-standard.test')
+    expect(musicLabXlClient.targetUrl).toBe('http://music-lab-xl.test')
+    expect(getMusicLabClient()).toBe(musicLabClient)
+    expect(getMusicLabClient(null)).toBe(musicLabClient)
+    expect(getMusicLabClient('turbo')).toBe(musicLabClient)
+    expect(getMusicLabClient('xl_turbo')).toBe(musicLabXlClient)
+  })
+
+  it('hace fallback a MUSIC_LAB_URL cuando baseUrl está vacío', () => {
+    const fallbackClient = new MusicLabClient({ baseUrl: '   ' })
+    expect(fallbackClient.targetUrl).toBe('http://music-lab-standard.test')
   })
 })

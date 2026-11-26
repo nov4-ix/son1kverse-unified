@@ -2,6 +2,7 @@
 // Cliente HTTP tipado para el servicio FastAPI `services/music-lab`.
 // Los tipos están escritos a mano y reflejan services/music-lab/openapi.json.
 
+import { isXlQualityPreset } from '@son1k/shared-types'
 import { config } from '../config/index.js'
 
 export type MusicLabEngine = 'simulation' | 'ace-step'
@@ -22,7 +23,7 @@ export interface MusicLabGenerateParams {
   output_format?: MusicLabOutputFormat | undefined
   master?: boolean | undefined
   engine?: MusicLabEngine | null | undefined
-  quality_preset?: string | undefined
+  quality_preset?: string | null | undefined
 }
 
 export interface MusicLabRepaintParams extends MusicLabGenerateParams {
@@ -190,11 +191,18 @@ export class MusicLabClient {
   private readonly retryBackoffMs: number
 
   constructor(options: MusicLabClientOptions = {}) {
-    this.baseUrl = (options.baseUrl ?? config.MUSIC_LAB_URL).replace(/\/$/, '')
+    const rawUrl = options.baseUrl !== undefined && options.baseUrl.trim() !== ''
+      ? options.baseUrl
+      : config.MUSIC_LAB_URL
+    this.baseUrl = rawUrl.replace(/\/$/, '')
     this.apiKey = options.apiKey ?? config.MUSIC_LAB_API_KEY
     this.timeoutMs = options.timeoutMs ?? config.MUSIC_LAB_TIMEOUT_MS
     this.retries = options.retries ?? config.MUSIC_LAB_RETRIES
     this.retryBackoffMs = options.retryBackoffMs ?? config.MUSIC_LAB_RETRY_BACKOFF_MS
+  }
+
+  get targetUrl(): string {
+    return this.baseUrl
   }
 
   async health(): Promise<MusicLabServiceHealth> {
@@ -372,3 +380,10 @@ export class MusicLabClient {
 }
 
 export const musicLabClient = new MusicLabClient()
+export const musicLabXlClient = new MusicLabClient({
+  baseUrl: config.MUSIC_LAB_XL_URL ?? config.MUSIC_LAB_URL,
+})
+
+export function getMusicLabClient(qualityPreset?: string | null): MusicLabClient {
+  return isXlQualityPreset(qualityPreset) ? musicLabXlClient : musicLabClient
+}

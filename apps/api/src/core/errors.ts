@@ -125,3 +125,18 @@ export class QuotaExceededError extends Son1kverseError {
     )
   }
 }
+
+export class TierUpgradeRequiredError extends Son1kverseError {
+  constructor(preset: string, tier: string, allowedPresets: readonly string[]) {
+    super(
+      `El preset '${preset}' requiere actualizar tu plan actual (${tier})`,
+      'TIER_UPGRADE_REQUIRED',
+      403,
+      {
+        quality_preset: preset,
+        subscription_tier: tier,
+        allowed_presets: [...allowedPresets],
+      },
+    )
+  }
+}

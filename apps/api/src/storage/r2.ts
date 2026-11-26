@@ -149,13 +149,14 @@ export class R2Client {
     const now = new Date()
     const { amzDate, dateStamp } = amzDates(now)
     const scope = `${dateStamp}/${R2_REGION}/${R2_SERVICE}/aws4_request`
-    const query = [
+    const queryParams: Array<[string, string]> = [
       ['X-Amz-Algorithm', 'AWS4-HMAC-SHA256'],
       ['X-Amz-Credential', `${this.options.accessKeyId}/${scope}`],
       ['X-Amz-Date', amzDate],
       ['X-Amz-Expires', String(ttl)],
       ['X-Amz-SignedHeaders', 'host'],
     ]
+    const query = queryParams
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([name, value]) => `${encodeRfc3986(name)}=${encodeRfc3986(value)}`)
       .join('&')

@@ -24,3 +24,12 @@ __pycache__/
 .ruff_cache/
 services/music-lab/models/
 ACE-Step-1.5/
+
+# Local env, configs & test outputs
+deploy.env
+.claude/
+Modelfile
+config.yaml
+config.yaml.save
+services/music-lab/ab_deapi_results/
+.agent/skills
