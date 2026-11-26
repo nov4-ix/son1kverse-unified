@@ -2,13 +2,18 @@
 # manually. The CPU image/services must never install this file.
 -r requirements.txt
 
-# PyTorch (CUDA 12.8 wheels, matching upstream ACE-Step 1.5). If the host
-# already ships a compatible torch, pip keeps it as long as the range matches.
+# PyTorch CUDA 12.8 wheels. The three packages must always be installed as a
+# matching set; mixing minor versions breaks torchaudio/torchvision:
+#   torch==2.10.0 + torchvision==0.25.0 + torchaudio==2.10.0  (verified, default)
+#   torch==2.11.0 + torchvision==0.26.0 + torchaudio==2.11.0  (alternative)
+# ACE-Step 1.5 pins the 2.10.0 set, so that is what this service ships.
 --extra-index-url https://download.pytorch.org/whl/cu128
-torch>=2.4,<2.11
-torchaudio>=2.4,<2.11
+torch==2.10.0+cu128
+torchvision==0.25.0+cu128
+torchaudio==2.10.0+cu128
 
-# Shared inference stack (ACE-Step 1.5 + HeartMuLa).
+# Shared inference stack (ACE-Step 1.5).
+# HeartMuLa was removed from SON1KVERSE: it does not fit the beta VRAM budget.
 transformers>=4.51,<4.58
 accelerate>=1.12
 safetensors>=0.4
@@ -25,6 +30,7 @@ modelscope>=1.15
 pytorch-wavelets>=1.3
 pywavelets>=1.6
 vector-quantize-pytorch>=1.27.15
+diffusers>=0.37
 
 # ACE-Step 1.5 (official repo: https://github.com/ace-step/ACE-Step-1.5).
 # Upstream pins torch==2.10.0+cu128 and vendors nano-vllm under
@@ -41,11 +47,7 @@ vector-quantize-pytorch>=1.27.15
 # (override with ACE_STEP_AUTO_DOWNLOAD=false + a pre-populated directory).
 # The 5Hz LM backend "vllm" additionally needs nano-vllm; the adapter defaults
 # to ACE_STEP_LM_BACKEND=pt and ACE_STEP_USE_LM=false (DiT-only).
-diffusers>=0.37
-
-# HeartMuLa (verified against the local reference implementation):
-# heartlib exposes HeartMuLaGenPipeline and HeartCodec.detokenize().
-heartlib @ git+https://github.com/HeartMuLa/heartlib.git
-torchtune==0.4.0
-torchao==0.9.0
-bitsandbytes>=0.43.0
+#
+# Optional quantization (ACE_STEP_QUANTIZATION=int8_weight_only, etc.) needs
+# torchao, which is intentionally NOT installed by default. Install it
+# separately if you enable that feature: pip install "torchao>=0.16,<0.17".

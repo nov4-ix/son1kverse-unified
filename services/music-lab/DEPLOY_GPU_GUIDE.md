@@ -8,6 +8,13 @@ despliegue del servicio FastAPI (`services/music-lab`) en una GPU.
 El `Dockerfile.gpu` instala PyTorch CUDA y el runtime de ACE-Step, pero **no
 incluye los pesos**: se montan en `/models` para reutilizarlos entre arranques.
 
+`requirements-gpu.txt` fija `torch==2.10.0+cu128`, `torchvision==0.25.0+cu128`
+y `torchaudio==2.10.0+cu128` (set verificado que coincide con ACE-Step 1.5).
+La alternativa válida es `2.11.0/0.26.0/2.11.0`; no mezcles versiones. ACE-Step
+se instala con `--no-deps` y, en Python 3.13, con `--ignore-requires-python`.
+`heartlib`, `torchtune`, `torchao` y `bitsandbytes` ya no se instalan por
+defecto; la cuantización opcional requiere `torchao` aparte.
+
 ```bash
 cd services/music-lab
 docker build -f Dockerfile.gpu -t son1kverse/music-lab:gpu .
@@ -96,6 +103,10 @@ T4 (16 GB):
 El DiT-only (`ACE_STEP_USE_LM=false`) es el modo que cabe con holgura en T4. El
 LM 5Hz se puede activar con `ACE_STEP_USE_LM=true`, pero reduce margen de VRAM
 y aumenta la latencia.
+
+En T4 usa **siempre** `ACE_STEP_DTYPE=bfloat16`: en las pruebas medidas
+`float16` produjo latentes NaN y el parche de bfloat16 forzado dio 7/7
+generaciones OK. El checklist completo está en `TEST_CHECKLIST.md`.
 
 ## Verificación
 

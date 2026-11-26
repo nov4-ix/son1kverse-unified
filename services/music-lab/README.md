@@ -49,9 +49,23 @@ vendoriza `nano-vllm`, por eso se instala sin dependencias:
 ```bash
 pip install -r requirements.txt -r requirements-gpu.txt
 pip install --no-deps -r requirements-ace-step.txt
+# En Python 3.13, upstream declara <3.13: agrega --ignore-requires-python
+# pip install --no-deps --ignore-requires-python -r requirements-ace-step.txt
 export ACE_STEP_MODEL_PATH=/models/ace-step
 MUSIC_LAB_MODE=ace-step uvicorn app.main:app --host 0.0.0.0 --port 8002
 ```
+
+`requirements-gpu.txt` fija el set CUDA 12.8 compatible:
+`torch==2.10.0`, `torchvision==0.25.0`, `torchaudio==2.10.0` (o, como
+alternativa, `2.11.0/0.26.0/2.11.0`). Nunca mezcles versiones menores entre
+esos tres paquetes. `torchao`, `bitsandbytes`, `torchtune` y `heartlib` ya no
+forman parte de las dependencias: la cuantización opcional
+(`ACE_STEP_QUANTIZATION`) requiere instalar `torchao` aparte.
+
+En una T4 usa siempre `ACE_STEP_DTYPE=bfloat16`: medido 7/7 generaciones OK
+con bfloat16 forzado; `float16` produce latentes NaN. El adaptador parchea
+`cuda_supports_bfloat16` antes de inicializar el motor y registra
+`[ace_step] dtype forzado: bfloat16`.
 
 Con `ACE_STEP_AUTO_DOWNLOAD=true` los checkpoints se descargan de
 `ACE-Step/Ace-Step1.5` en Hugging Face la primera vez. El adapter usa
