@@ -45,6 +45,9 @@ El servicio escucha en `:8002`. Health: `GET /health`; capacidades:
 
 ## RunPod
 
+Guía completa (serverless vs pod, seguridad y costos):
+[`docs/RUNPOD_GUIDE.md`](../../docs/RUNPOD_GUIDE.md).
+
 1. Crea un Pod GPU (RTX 4090 / A6000) con una plantilla CUDA + Docker.
 2. Expón el puerto **8002** (HTTP).
 3. Monta un volumen persistente de al menos 50 GB para `/models` y `/outputs`.
