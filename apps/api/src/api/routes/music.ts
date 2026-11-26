@@ -78,44 +78,7 @@ const AudioQuerySchema = z.object({
   stem: MusicLabStemSchema.optional(),
 })
 
-const optionalIntParam = (schema: z.ZodNumber) =>
-  z.preprocess(
-    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
-    schema.optional(),
-  )
 
-const ListGenerationsQuerySchema = z.object({
-  limit:  optionalIntParam(z.coerce.number().int().min(1).max(100)),
-  offset: optionalIntParam(z.coerce.number().int().min(0)),
-})
-
-const DEFAULT_GENERATIONS_LIMIT = 20
-
-type GenerationHistoryStatus =
-  | 'pending'
-  | 'queued'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-
-function historyStatusForGeneration(status: GenerationStatus): GenerationHistoryStatus {
-  switch (status) {
-    case GenerationStatus.COMPLETED:
-      return 'completed'
-    case GenerationStatus.PROCESSING:
-      return 'running'
-    case GenerationStatus.FAILED:
-      return 'failed'
-    case GenerationStatus.CANCELLED:
-      return 'cancelled'
-    case GenerationStatus.QUEUED:
-      return 'queued'
-    case GenerationStatus.PENDING:
-    default:
-      return 'pending'
-  }
-}
 
 function historyAudioUrl(row: {
   status: GenerationStatus
@@ -489,9 +452,9 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
       status: String(row.status).toLowerCase() === "processing" ? "running" : String(row.status).toLowerCase(),
       qualityPreset: row.qualityPreset ?? null,
       modelVersion: row.modelVersion ?? null,
-      durationS: row.durationS ?? row.duration ?? null,
-      bpm: row.bpm ?? row.tempo ?? null,
-      musicalKey: row.musicalKey ?? row.key ?? null,
+      durationS: row.duration ?? null,
+      bpm: row.tempo ?? null,
+      musicalKey: row.key ?? null,
       audioUrl: historyAudioUrl(row),
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     }))
