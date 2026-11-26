@@ -96,9 +96,11 @@ class Transcriber:
         try:
             from faster_whisper import WhisperModel
 
-            device = "cuda" if os.environ.get("CUDA_VISIBLE_DEVICES", "0") != "" else "cpu"
-            self.model = WhisperModel(model_name, device="auto", compute_type="default")
-            print(f"Whisper '{model_name}' cargado ({device}).")
+            # WHISPER_DEVICE=cpu evita pelear VRAM/cuDNN con ACE-Step en la misma GPU.
+            device = os.environ.get("WHISPER_DEVICE", "auto")
+            compute = "int8" if device == "cpu" else "default"
+            self.model = WhisperModel(model_name, device=device, compute_type=compute)
+            print(f"Whisper '{model_name}' cargado (device={device}).")
         except Exception as exc:  # noqa: BLE001
             print(f"Whisper no disponible, se omite WER: {exc}", file=sys.stderr)
 
