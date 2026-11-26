@@ -1,0 +1,57 @@
+[
+  {
+    "name": "reggaeton_oscuro",
+    "prompt": "dark reggaeton, heavy 808 bass, dembow drums, moody synth pads, male vocal",
+    "bpm": 92,
+    "key": "Am",
+    "style_tags": [
+      "reggaeton",
+      "dark"
+    ],
+    "lyrics": "[intro]\n\n[verse 1]\nLas luces de la ciudad no me dejan dormir\nCaminando entre sombras buscando salir\nCada esquina me cuenta lo que no quise oír\nPero el ritmo en mis venas me enseña a seguir\n\n[chorus]\nSigo mi ritmo, no me detengo\nLo imperfecto también es sagrado\nBailo en la noche con lo que tengo\nY el fuego en el pecho nunca se ha apagado\n\n[verse 2]\nDos de la mañana y el bajo me habla\nCada golpe de tambor rompe la calma\nDejé mis miedos tirados en la acera\nY mi nombre suena donde nadie espera\n\n[chorus]\nSigo mi ritmo, no me detengo\nLo imperfecto también es sagrado\nBailo en la noche con lo que tengo\nY el fuego en el pecho nunca se ha apagado\n\n[bridge]\nSi me caigo me levanto, si me pierdo me encuentro\nLa oscuridad también guarda un centro\n\n[chorus]\nSigo mi ritmo, no me detengo\nLo imperfecto también es sagrado\n\n[outro]\n"
+  },
+  {
+    "name": "lofi_instrumental",
+    "prompt": "lo-fi hip hop, mellow rhodes piano, dusty vinyl drums, warm bass, relaxed",
+    "bpm": 85,
+    "key": "F",
+    "style_tags": [
+      "lofi",
+      "chill"
+    ],
+    "lyrics": "[instrumental]"
+  },
+  {
+    "name": "synthwave_cyberpunk",
+    "prompt": "cyberpunk synthwave, pulsing analog bass arpeggio, gated reverb snares, neon atmosphere, cinematic",
+    "bpm": 110,
+    "key": "Dm",
+    "style_tags": [
+      "synthwave",
+      "cyberpunk"
+    ],
+    "lyrics": "[instrumental]"
+  },
+  {
+    "name": "balada_guitarra_voz",
+    "prompt": "acoustic singer-songwriter ballad, fingerpicked nylon guitar, intimate female vocal, soft strings",
+    "bpm": 72,
+    "key": "G",
+    "style_tags": [
+      "balada",
+      "acoustic"
+    ],
+    "lyrics": "[intro]\n\n[verse 1]\nHay una luz que se queda cuando todo se apaga\nY una voz que me sostiene aunque no diga nada\nGuardo tu nombre entre las cuerdas de esta guitarra\nY cada nota es una puerta que se abre sin llave\n\n[chorus]\nCanto bajito para no romper el aire\nLo que duele también puede ser un cantar\nSi el mundo es ruido, que esta canción lo calle\nY lo imperfecto aprenda a respirar\n\n[verse 2]\nCaminé descalzo por el borde del miedo\nY aprendí que el silencio también tiene su acento\nHoy te escribo despacio lo que nunca dije\nQue quedarse a tu lado fue mi mejor destino\n\n[chorus]\nCanto bajito para no romper el aire\nLo que duele también puede ser un cantar\nSi el mundo es ruido, que esta canción lo calle\nY lo imperfecto aprenda a respirar\n\n[bridge]\nY si mañana la noche se hace larga\nQue mi voz te alcance, que mi voz no falle\n\n[chorus]\nCanto bajito para no romper el aire\nY lo imperfecto aprenda a respirar\n\n[outro]\n"
+  },
+  {
+    "name": "trap_latino",
+    "prompt": "latin trap, rolling hi-hats, sub bass, dark bell melody, autotuned vocal",
+    "bpm": 140,
+    "key": "Cm",
+    "style_tags": [
+      "trap",
+      "latino"
+    ],
+    "lyrics": "[intro]\n\n[verse 1]\nDesde abajo subiendo sin pedir permiso\nCada paso es un riesgo, cada riesgo es un piso\nMe dijeron que no, yo lo volví combustible\nLo que no me rompió lo volví indestructible\n\n[chorus]\nNo me frena nadie, voy en modo avión\nLa noche es mía, suena mi canción\nTodo lo que sueño lo hago realidad\nCon el alma en llamas y sin mirar atrás\n\n[verse 2]\nDel barrio a la cima con la cabeza fría\nCada hora de estudio fue mi guerra en silencio\nSi hablan de mi nombre que sea con respeto\nPorque lo que sembré ya me está dando el fruto\n\n[chorus]\nNo me frena nadie, voy en modo avión\nLa noche es mía, suena mi canción\nTodo lo que sueño lo hago realidad\nCon el alma en llamas y sin mirar atrás\n\n[bridge]\nUn paso, dos pasos, no me detengo\nLo imperfecto también es mi templo\n\n[chorus]\nNo me frena nadie, voy en modo avión\nLa noche es mía, suena mi canción\n\n[outro]\n"
+  }
+]
