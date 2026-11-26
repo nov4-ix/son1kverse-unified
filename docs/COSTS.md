@@ -20,20 +20,36 @@ Costo mensual de un pod 24/7 = `precio_hora * 730`. Solo conviene sobre serverle
 cuando el uso sostenido supera aproximadamente `730 * precio_hora / costo_por_cancion`
 canciones al mes (calcularlo con los números reales).
 
-## Único dato medido hasta hoy
+## Datos medidos (Kaggle T4 16 GB, bf16 desde el repo, offload, DiT-only, turbo 8 pasos, 180 s, con mastering)
 
-| GPU | Preset | Canción | Difusión | Offload | Encoder | VRAM pico | Fuente |
+Corrida del 25-nov-2026, `scripts/ab_quality.py`, 5 canciones, parche bf16 aplicado por el adaptador
+(dtype efectivo confirmado: bfloat16, sin NaN).
+
+| Prueba | wall_s | gpu_seconds | Difusión | Decode | Mastering (CPU) | VRAM pico | LUFS |
 |---|---|---|---|---|---|---|---|
-| T4 16 GB (Kaggle), bf16 forzado, offload, DiT-only | turbo (8 pasos) | 180 s | 32.9 s | ~10 s | 1.2 s | 5.5 GB antes del decode | prueba manual Kaggle |
+| reggaeton_oscuro (1ª, arranque en frío) | 174.7 | 78.5 | 25.7 | 30.7 | 6.6 | 5.93 GB | -14.17 |
+| lofi_instrumental | 93.5 | 85.7 | 29.0 | 39.0 | 6.6 | 6.07 GB | -14.61 |
+| synthwave_cyberpunk | 96.8 | 87.2 | 31.8 | 37.3 | 6.5 | 6.07 GB | -14.24 |
+| balada_guitarra_voz | 96.5 | 88.5 | 33.4 | 36.9 | 6.6 | 6.10 GB | -13.26 |
+| trap_latino | 96.5 | 88.6 | 33.6 | 36.8 | 6.4 | 6.10 GB | -13.51 |
 
-Falta el tiempo total por canción completa (decode + mastering) y las pruebas de
-3-4 minutos con letra: salen de `ab_quality.py`.
+Lectura: en caliente una canción de 3 min tarda ~95 s de pared en T4 (el pico de 174.7 s de la primera
+incluye ~80 s de carga de pesos y calentamiento). Con offload, el decode del VAE (~37 s) pesa más que la
+difusión (~30 s). VRAM pico ~6 GB: cabe holgado en 16 GB. El mastering a -14 LUFS queda dentro de ±0.7 LU.
+En T4 el cuello de botella es el decode; en GPUs más rápidas y sin offload se espera menos, PENDIENTE medir.
+
+### Costo por canción en T4 (aritmética sobre lo medido, sin precios asumidos)
+
+`costo = 96.5 s / 3600 * precio_hora = 0.0268 * precio_hora` (USD por canción, por cada USD/h de la GPU).
+Con overhead de 0.30: `0.0348 * precio_hora`. Ejemplo: una GPU de USD 0.40/h daría ~USD 0.014 por canción.
+El precio por hora es un dato a verificar en el proveedor; no está confirmado aquí.
 
 ## Tabla a llenar (por canción de 180 s, preset turbo salvo indicación)
 
 | GPU | Precio/h (verificar en runpod.io/pricing) | wall_s | gpu_seconds | Costo/canción | Canciones/h | Notas |
 |---|---|---|---|---|---|---|
-| T4 / L4 | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | |
+| T4 | PENDIENTE | 96.5 (medido) | 88 (medido) | 0.0268 x precio/h | ~37 | medido en Kaggle |
+| L4 | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | |
 | RTX 4090 24 GB | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | cabe xl_turbo |
 | A100 40/80 GB | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | |
 | 4090, preset xl_turbo | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | requiere >= 20 GB |

@@ -88,6 +88,22 @@ def audio_metrics(path: Path) -> dict[str, float | None]:
     return out
 
 
+def load_audio_16k(path: Path) -> Any:
+    """WAV/MP3 -> float32 mono a 16 kHz (formato que espera Whisper)."""
+    from math import gcd
+
+    import numpy as np
+    import soundfile as sf
+    from scipy.signal import resample_poly
+
+    data, rate = sf.read(str(path), dtype="float32", always_2d=True)
+    mono = data.mean(axis=1)
+    if rate != 16_000:
+        g = gcd(int(rate), 16_000)
+        mono = resample_poly(mono, 16_000 // g, int(rate) // g)
+    return np.ascontiguousarray(mono, dtype=np.float32)
+
+
 class Transcriber:
     def __init__(self, model_name: str, enabled: bool) -> None:
         self.model: Any | None = None
@@ -107,7 +123,9 @@ class Transcriber:
     def words(self, path: Path, language: str) -> list[str] | None:
         if self.model is None:
             return None
-        segments, _ = self.model.transcribe(str(path), language=language, vad_filter=False)
+        # Se pasa un array 16 kHz mono en vez de la ruta: evita el decodificador PyAV de
+        # faster-whisper, que falla en entornos con 'av' viejo ("metadata_errors").
+        segments, _ = self.model.transcribe(load_audio_16k(path), language=language, vad_filter=False)
         return normalize_text(" ".join(s.text for s in segments))
 
 
@@ -151,6 +169,34 @@ def compute_fields(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def wer_only(folder: Path, tests_path: Path, args: argparse.Namespace) -> int:
+    """Calcula WER sobre audios existentes (nombre: <preset>__<prueba>.<wav|mp3>)."""
+    lyrics_by_test = {t["name"]: t.get("lyrics") or "" for t in json.loads(tests_path.read_text(encoding="utf-8"))}
+    transcriber = Transcriber(args.whisper_model, enabled=True)
+    if transcriber.model is None:
+        print("Whisper no disponible.", file=sys.stderr)
+        return 1
+    rows = []
+    for audio in sorted(folder.glob("*__*.*")):
+        if audio.suffix.lower() not in {".wav", ".mp3"}:
+            continue
+        preset, _, name = audio.stem.partition("__")
+        lyrics = lyrics_by_test.get(name, "")
+        if not lyrics.strip() or lyrics.strip().lower() == "[instrumental]":
+            continue
+        hyp = transcriber.words(audio, args.language) or []
+        score = wer(normalize_text(lyrics), hyp)
+        rows.append({"preset": preset, "test": name, "wer": score, "transcripcion": " ".join(hyp)[:400]})
+        print(f"  {preset:>10} {name:<22} WER={score}")
+    out_csv = folder / "wer_results.csv"
+    with out_csv.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=["preset", "test", "wer", "transcripcion"])
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Escrito {out_csv}")
+    return 0 if rows else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", default=os.environ.get("MUSIC_LAB_URL", "http://localhost:8002"))
@@ -164,8 +210,13 @@ def main() -> int:
     ap.add_argument("--language", default="es")
     ap.add_argument("--whisper-model", default="small")
     ap.add_argument("--no-whisper", action="store_true")
+    ap.add_argument("--wer-from", default="", help="carpeta con audios ya generados (<preset>__<prueba>.wav): "
+                    "solo calcula WER y escribe wer_results.csv, sin tocar el servidor")
     ap.add_argument("--timeout", type=float, default=2400)
     args = ap.parse_args()
+
+    if args.wer_from:
+        return wer_only(Path(args.wer_from), Path(args.tests), args)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
