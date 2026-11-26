@@ -104,6 +104,40 @@ def extract_price(payload: dict[str, Any]) -> float | None:
         return None
 
 
+OPTIONAL_FIELDS = {"bpm", "keyscale", "timesignature", "vocal_language"}
+
+
+def dropped_by_422(response: httpx.Response, fields: dict[str, str]) -> list[str]:
+    """Campos opcionales que la API rechazó (422 con errors.<campo>); se pueden omitir y reintentar."""
+    if response.status_code != 422:
+        return []
+    try:
+        errors = (response.json() or {}).get("errors") or {}
+    except ValueError:
+        return []
+    return [k for k in errors if k in OPTIONAL_FIELDS and k in fields]
+
+
+def quote(client: httpx.Client, fields: dict[str, str]) -> tuple[float | None, dict[str, str], str | None]:
+    """Cotiza; si un campo opcional no es válido para el modelo, lo quita y reintenta. -> (precio, campos, nota)."""
+    note = None
+    for _ in range(len(OPTIONAL_FIELDS) + 1):
+        body = {
+            k: (int(v) if k in {"inference_steps", "bpm", "timesignature"} and v.lstrip("-").isdigit()
+                else float(v) if k in {"duration", "guidance_scale"} else v)
+            for k, v in fields.items() if k not in {"seed", "format"}
+        }
+        q = client.post("/api/v2/audio/music/price", json=body)
+        if q.status_code == 200:
+            return extract_price(q.json()), fields, note
+        bad = dropped_by_422(q, fields)
+        if not bad:
+            return None, fields, f"HTTP {q.status_code} {q.text[:200]}"
+        fields = {k: v for k, v in fields.items() if k not in bad}
+        note = "omitidos por el modelo: " + ",".join(bad)
+    return None, fields, note
+
+
 def list_models(client: httpx.Client) -> int:
     r = client.get("/api/v2/models")
     print("HTTP", r.status_code)
@@ -136,6 +170,10 @@ def list_models(client: httpx.Client) -> int:
 
 def submit_and_wait(client: httpx.Client, fields: dict[str, str], timeout_s: float) -> tuple[str, dict[str, Any]]:
     r = client.post("/api/v2/audio/music", files=as_multipart(fields))
+    bad = dropped_by_422(r, fields)
+    if bad:
+        fields = {k: v for k, v in fields.items() if k not in bad}
+        r = client.post("/api/v2/audio/music", files=as_multipart(fields))
     if r.status_code != 200:
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:300]}")
     request_id = r.json()["data"]["request_id"]
@@ -209,13 +247,9 @@ def main() -> int:
             p = model_params(model, args.steps, args.guidance)
             for t in tests:
                 fields = form_fields(t, model, args.duration, args.language, p["steps"], p["guidance"])
-                q = client.post("/api/v2/audio/music/price", json={
-                    k: (int(v) if k in {"inference_steps", "bpm", "timesignature", "seed"} and v.lstrip("-").isdigit()
-                        else float(v) if k in {"duration", "guidance_scale"} else v)
-                    for k, v in fields.items() if k not in {"seed", "format"}})
-                price = extract_price(q.json()) if q.status_code == 200 else None
-                if q.status_code != 200:
-                    print(f"  cotización falló ({model}/{t['name']}): HTTP {q.status_code} {q.text[:200]}", file=sys.stderr)
+                price, fields, note = quote(client, fields)
+                if price is None or note:
+                    print(f"  ({model}/{t['name']}): {note}", file=sys.stderr)
                 plan.append((model, t, fields, price))
                 total += price or 0.0
         print(f"Plan: {len(plan)} generaciones, costo estimado total: {total:.4f} créditos "
