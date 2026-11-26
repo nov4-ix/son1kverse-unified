@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -333,6 +334,7 @@ class JobManager:
     def _apply_mastering(
         self, result: GenerationResult | StemsResult
     ) -> GenerationResult | StemsResult:
+        started_at = time.perf_counter()
         chain = MasteringChain(result.sample_rate)
         if isinstance(result, GenerationResult):
             source = Path(result.audio_path)
@@ -340,6 +342,7 @@ class JobManager:
             _, metrics = chain.master_file(source, target, result.output_format)
             result.audio_path = str(target)
             result.metadata["mastering"] = asdict(metrics)
+            self._record_mastering_time(result, time.perf_counter() - started_at)
             return result
 
         mastered: dict[StemName, str] = {}
@@ -355,7 +358,23 @@ class JobManager:
             metrics_by_stem[stem] = asdict(metrics)
         result.stems = mastered
         result.metadata["mastering"] = metrics_by_stem
+        self._record_mastering_time(result, time.perf_counter() - started_at)
         return result
+
+    @staticmethod
+    def _record_mastering_time(
+        result: GenerationResult | StemsResult, seconds: float
+    ) -> None:
+        compute = result.metadata.get("compute")
+        if not isinstance(compute, dict):
+            return
+        elapsed = round(seconds, 3)
+        phase_seconds = compute.setdefault("phase_seconds", {})
+        gpu_seconds = compute.setdefault("gpu_seconds_by_phase", {})
+        if isinstance(phase_seconds, dict):
+            phase_seconds["mastering"] = elapsed
+        if isinstance(gpu_seconds, dict):
+            gpu_seconds["mastering"] = 0.0
 
     async def _update(
         self,

@@ -16,7 +16,9 @@ from app.config import Settings
 from app.ham.engine import SectionAnalysis
 from app.ham.key import KeyDetectionResult
 from app.ham.spectral import SpectralProfile
+from app.jobs.manager import JobManager
 from app.mastering import MasteringMetrics
+from app.schemas import EngineName, GenerationResult
 from tests.helpers import make_client, run, submit_and_wait
 
 
@@ -195,6 +197,28 @@ def test_pipeline_runs_ham_before_mastering(
             assert calls == ["generation", "ham", "mastering"]
 
     run(scenario())
+
+
+def test_mastering_phase_is_recorded_in_compute() -> None:
+    result = GenerationResult(
+        job_id="x",
+        audio_path="/tmp/x.wav",
+        duration_s=1.0,
+        sample_rate=44100,
+        engine=EngineName.SIMULATION,
+        mode=EngineName.SIMULATION,
+        metadata={
+            "compute": {
+                "phase_seconds": {"diffusion": 1.0, "decode": 0.5},
+                "gpu_seconds_by_phase": {"diffusion": 1.0, "decode": 0.5},
+            }
+        },
+    )
+
+    JobManager._record_mastering_time(result, 0.1234)
+
+    assert result.metadata["compute"]["phase_seconds"]["mastering"] == 0.123
+    assert result.metadata["compute"]["gpu_seconds_by_phase"]["mastering"] == 0.0
 
 
 def test_auto_mode_without_gpu_fails_cleanly(tmp_path: Path) -> None:

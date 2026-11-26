@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ServiceMode = Literal["simulation", "ace-step", "auto"]
@@ -41,7 +41,8 @@ class Settings(BaseSettings):
 
     ace_step_model_path: Path = Path("/models/ace-step")
     ace_step_device: str = "cuda"
-    ace_step_dtype: str = "bfloat16"
+    ace_step_dtype: Literal["bfloat16", "float16", "float32"] = "bfloat16"
+    ace_step_quantization: str | None = None
     ace_step_offload: bool = False
     ace_step_python_module: str = "acestep"
     ace_step_config_path: str = "acestep-v15-turbo"
@@ -55,6 +56,21 @@ class Settings(BaseSettings):
     ace_step_shift: float = Field(default=3.0, gt=0, le=5)
     ace_step_vocal_language: str = "unknown"
 
+    @field_validator("ace_step_dtype", mode="before")
+    @classmethod
+    def _normalize_ace_step_dtype(cls, value: object) -> str:
+        text = str(value).strip().lower()
+        if text not in {"bfloat16", "float16", "float32"}:
+            raise ValueError("ACE_STEP_DTYPE must be bfloat16, float16 or float32")
+        return text
+
+    @field_validator("ace_step_quantization", mode="before")
+    @classmethod
+    def _blank_quantization_to_none(cls, value: object) -> object:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     def ensure_output_dir(self) -> Path:
         self.music_lab_output_dir.mkdir(parents=True, exist_ok=True)
