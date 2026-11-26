@@ -204,6 +204,8 @@ def main() -> int:
     ap.add_argument("--presets", default="turbo", help="lista separada por comas; 'none' = sin preset")
     ap.add_argument("--tests", default=str(HERE / "ab_tests_es.json"))
     ap.add_argument("--only", default="", help="nombres de prueba separados por comas")
+    ap.add_argument("--label", default="", help="etiqueta para nombrar audios/filas cuando no hay preset "
+                    "(p. ej. xl_turbo si el servidor se arrancó con ACE_STEP_CONFIG_PATH=acestep-v15-xl-turbo)")
     ap.add_argument("--duration", type=float, default=180, help="duración (s) para todas; 0 = la de cada prueba")
     ap.add_argument("--master", action="store_true", help="aplica masterización (-14 LUFS)")
     ap.add_argument("--out", default="ab_results")
@@ -237,7 +239,7 @@ def main() -> int:
         print("health:", health.status_code, health.text[:300])
         for preset in presets:
             for test in tests:
-                label = preset or "default"
+                label = preset or args.label or "default"
                 row: dict[str, Any] = {k: "" for k in FIELDS}
                 row.update(test=test["name"], preset=label, ok=False)
                 payload = {
