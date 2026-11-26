@@ -16,6 +16,7 @@ from app.adapters import ace_step as ace_step_module
 from app.adapters.ace_step import AceStepAdapter, format_keyscale
 from app.adapters.registry import AdapterRegistry
 from app.config import Settings
+from app.errors import InvalidRequestError
 from app.schemas import GenerateRequest
 from tests.helpers import run
 
@@ -363,3 +364,34 @@ def test_ace_step_metadata_includes_reproducibility_fields(tmp_path: Path) -> No
         "decode": None,
         "lm": None,
     }
+    assert metadata["quality_preset"] is None
+
+
+def test_quality_preset_applies_steps_guidance_and_lm(tmp_path: Path) -> None:
+    class FakeParams:
+        def __init__(self, **kwargs: Any) -> None:
+            self.__dict__.update(kwargs)
+
+    adapter = AceStepAdapter(_settings(tmp_path))
+    adapter._inference = SimpleNamespace(GenerationParams=FakeParams)
+
+    sft = adapter._build_params(
+        "generate",
+        GenerateRequest(prompt="x", duration_s=10.0, quality_preset="sft"),
+    )
+    assert sft.inference_steps == 50
+    assert sft.guidance_scale == 8.0
+    assert sft.thinking is False
+
+    turbo_lm = adapter._build_params(
+        "generate",
+        GenerateRequest(prompt="x", duration_s=10.0, quality_preset="turbo_lm"),
+    )
+    assert turbo_lm.inference_steps == 8
+    assert turbo_lm.thinking is True
+
+    with pytest.raises(InvalidRequestError):
+        adapter._build_params(
+            "generate",
+            GenerateRequest(prompt="x", duration_s=10.0, quality_preset="unknown"),
+        )

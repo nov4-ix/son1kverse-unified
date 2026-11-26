@@ -22,6 +22,7 @@ export interface MusicLabGenerateParams {
   output_format?: MusicLabOutputFormat | undefined
   master?: boolean | undefined
   engine?: MusicLabEngine | null | undefined
+  quality_preset?: string | undefined
 }
 
 export interface MusicLabRepaintParams extends MusicLabGenerateParams {

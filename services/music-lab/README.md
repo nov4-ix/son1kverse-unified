@@ -78,6 +78,24 @@ en `:8002` y publica una URL `https://*.trycloudflare.com` sin cuenta ni token.
 El notebook `notebooks/colab_t4_ace_step.ipynb` automatiza el arranque en una
 T4 con `ACE_STEP_OFFLOAD=true`.
 
+## Presets de calidad
+
+`POST /v1/generate` acepta `quality_preset` opcional. Los presets viven en
+`app/config.py` (`QUALITY_PRESETS`) y no cambian el default si se omiten:
+
+| Preset | Checkpoint | Pasos | Guidance | LM | VRAM mínima |
+|---|---|---|---|---|---|
+| `turbo` | `acestep-v15-turbo` | 8 | 7.0 | no | — |
+| `turbo_lm` | `acestep-v15-turbo` | 8 | 7.0 | sí | — |
+| `xl_turbo` | `acestep-v15-xl-turbo` | 8 | 7.0 | no | 20 GB |
+| `sft` | `acestep-v15-sft` | 50 | 8.0 | no | — |
+
+El checkpoint y el LM se eligen al arrancar: para usar un preset cuyo
+`config_path` o `use_lm` no coincide con `ACE_STEP_CONFIG_PATH` /
+`ACE_STEP_USE_LM`, la API responde `422` antes de encolar. `xl_turbo` también
+responde `422` si la GPU no alcanza la VRAM mínima. Así se evita fallar a
+media generación.
+
 ## API
 
 - `POST /v1/generate` · `POST /v1/repaint` · `POST /v1/cover` · `POST /v1/stems`

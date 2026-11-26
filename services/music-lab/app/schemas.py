@@ -44,6 +44,7 @@ class GenerationParams(BaseModel):
     output_format: OutputFormat = OutputFormat.WAV
     master: bool = False
     engine: EngineName | None = None
+    quality_preset: str | None = Field(default=None, max_length=32)
 
 
 class GenerateRequest(GenerationParams):

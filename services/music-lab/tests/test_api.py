@@ -346,3 +346,44 @@ def test_job_cap_evicts_oldest_terminal_job(tmp_path: Path) -> None:
             ).status_code == 200
 
     run(scenario())
+
+
+def test_quality_preset_is_validated_before_queue(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("app.jobs.manager.gpu_info", lambda: None)
+
+    async def scenario() -> None:
+        base = {"prompt": "x", "duration_s": 1.0, "engine": "ace-step"}
+        async with make_client(settings(tmp_path)) as (_, client):
+            unknown = await client.post(
+                "/v1/generate", json={**base, "quality_preset": "nope"}
+            )
+            assert unknown.status_code == 422
+            assert unknown.json()["code"] == "INVALID_REQUEST"
+            assert "turbo" in unknown.json()["details"]["available_presets"]
+
+            sft = await client.post(
+                "/v1/generate", json={**base, "quality_preset": "sft"}
+            )
+            assert sft.status_code == 422
+            assert sft.json()["details"]["required_config_path"] == "acestep-v15-sft"
+
+            lm = await client.post(
+                "/v1/generate", json={**base, "quality_preset": "turbo_lm"}
+            )
+            assert lm.status_code == 422
+            assert "ACE_STEP_USE_LM" in lm.json()["message"]
+
+        async with make_client(
+            settings(tmp_path, ace_step_config_path="acestep-v15-xl-turbo")
+        ) as (_, client):
+            xl = await client.post(
+                "/v1/generate", json={**base, "quality_preset": "xl_turbo"}
+            )
+            assert xl.status_code == 422
+            details = xl.json()["details"]
+            assert details["required_vram_gb"] == 20.0
+            assert details["available_vram_gb"] is None
+
+    run(scenario())

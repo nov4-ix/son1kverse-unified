@@ -46,7 +46,11 @@ Hechos medidos en Kaggle T4 (no reinterpretar):
 
 - [ ] `POST /v1/generate` con `duration_s=30` termina en `succeeded`.
 - [ ] Repetir con `duration_s=180` y `ACE_STEP_OFFLOAD=true`.
-- [ ] `metadata` incluye `dtype`, `steps`, `guidance`, `seed`.
+- [ ] `metadata` incluye `dtype`, `steps`, `guidance`, `seed` y
+      `quality_preset`.
+- [ ] `quality_preset=turbo` funciona con el checkpoint turbo.
+- [ ] Un preset incompatible responde `422` antes de encolar (no falla a mitad
+      de la generación).
 - [ ] `metadata.compute` incluye `phase_seconds.diffusion`,
       `phase_seconds.decode`, `phase_seconds.mastering` y
       `gpu_seconds_by_phase` cuando hay GPU.

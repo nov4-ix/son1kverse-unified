@@ -42,7 +42,7 @@ from app.audio import (
     resolve_output_file,
     write_audio,
 )
-from app.config import Settings, get_settings
+from app.config import Settings, get_quality_preset, get_settings
 from app.errors import (
     EngineUnavailableError,
     InvalidRequestError,
@@ -262,6 +262,14 @@ class AceStepAdapter(AudioGeneratorInterface):
             caption = f"{caption}; styles: {', '.join(tags)}"
         return caption[:_CAPTION_MAX_CHARS].rstrip()
 
+    def _quality_preset(self, req: GenerationParams) -> Any | None:
+        if req.quality_preset is None:
+            return None
+        try:
+            return get_quality_preset(req.quality_preset)
+        except KeyError as exc:
+            raise InvalidRequestError(str(exc)) from exc
+
     def _build_params(
         self,
         operation: str,
@@ -271,7 +279,18 @@ class AceStepAdapter(AudioGeneratorInterface):
         if self._inference is None:
             raise JobExecutionError("ACE-Step pipeline is not loaded")
         inference = self._inference
-        use_lm = self._settings.ace_step_use_lm
+        preset = self._quality_preset(req)
+        use_lm = preset.use_lm if preset is not None else self._settings.ace_step_use_lm
+        inference_steps = (
+            preset.inference_steps
+            if preset is not None
+            else self._settings.ace_step_inference_steps
+        )
+        guidance_scale = (
+            preset.guidance_scale
+            if preset is not None
+            else self._settings.ace_step_guidance_scale
+        )
         lyrics = (req.lyrics or "").strip()
         instrumental = not lyrics or lyrics.lower() == "[instrumental]"
         if not lyrics:
@@ -293,8 +312,8 @@ class AceStepAdapter(AudioGeneratorInterface):
             keyscale=format_keyscale(req.key),
             duration=-1.0 if source_path is not None else duration,
             seed=int(req.seed),
-            inference_steps=self._settings.ace_step_inference_steps,
-            guidance_scale=self._settings.ace_step_guidance_scale,
+            inference_steps=inference_steps,
+            guidance_scale=guidance_scale,
             shift=self._settings.ace_step_shift,
             thinking=use_lm,
             use_cot_metas=use_lm,
@@ -429,6 +448,7 @@ class AceStepAdapter(AudioGeneratorInterface):
         }
         metadata = {
             "model": self._settings.ace_step_config_path,
+            "quality_preset": req.quality_preset,
             "pipeline": "acestep.inference.generate_music",
             "task_type": params.task_type,
             "operation": operation,

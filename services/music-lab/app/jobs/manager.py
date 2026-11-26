@@ -11,10 +11,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.adapters.registry import AdapterRegistry, Selection
+from app.adapters.runtime import gpu_info
 from app.audio import read_audio, resample_if_needed
-from app.config import Settings
+from app.config import QUALITY_PRESETS, Settings, get_quality_preset
 from app.errors import (
     AudioNotReadyError,
+    InvalidRequestError,
     JobNotFoundError,
     MusicLabError,
     NotSupportedError,
@@ -152,11 +154,53 @@ class JobManager:
             except OSError:
                 logger.warning("Could not delete audio file %s", raw_path, exc_info=True)
 
+    def _validate_quality_preset(self, request: JobRequest) -> None:
+        name = request.quality_preset
+        if name is None:
+            return
+        if self._settings.music_lab_mode == "simulation" and request.engine != EngineName.ACE_STEP:
+            return
+        try:
+            preset = get_quality_preset(name)
+        except KeyError as exc:
+            raise InvalidRequestError(
+                str(exc),
+                details={"available_presets": sorted(QUALITY_PRESETS)},
+            ) from exc
+        if preset.config_path != self._settings.ace_step_config_path:
+            raise InvalidRequestError(
+                f"Preset '{name}' requires ACE_STEP_CONFIG_PATH={preset.config_path}",
+                details={
+                    "quality_preset": name,
+                    "required_config_path": preset.config_path,
+                    "loaded_config_path": self._settings.ace_step_config_path,
+                },
+            )
+        if preset.use_lm and not self._settings.ace_step_use_lm:
+            raise InvalidRequestError(
+                f"Preset '{name}' requires ACE_STEP_USE_LM=true",
+                details={"quality_preset": name},
+            )
+        if preset.min_vram_gb > 0:
+            info = gpu_info()
+            available = float(info["vram_total_gb"]) if info is not None else None
+            if available is None or available < preset.min_vram_gb:
+                raise InvalidRequestError(
+                    f"Preset '{name}' requires at least {preset.min_vram_gb:g} GB of VRAM",
+                    details={
+                        "quality_preset": name,
+                        "required_vram_gb": preset.min_vram_gb,
+                        "available_vram_gb": available,
+                        "gpu": info,
+                    },
+                )
+
     async def submit(
         self, operation: OperationName, request: JobRequest
     ) -> Job:
         if not self._started:
             raise RuntimeError("JobManager is not started")
+        self._validate_quality_preset(request)
         now = datetime.now(UTC)
         job_id = uuid.uuid4().hex
         job = Job(

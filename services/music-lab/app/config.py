@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -10,6 +11,63 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ServiceMode = Literal["simulation", "ace-step", "auto"]
+
+
+@dataclass(frozen=True, slots=True)
+class QualityPreset:
+    """Declarative ACE-Step quality preset.
+
+    ``config_path`` and ``use_lm`` are deployment-level choices: they must
+    match the loaded engine. ``inference_steps`` and ``guidance_scale`` are
+    applied per request. ``min_vram_gb`` rejects the request before it is
+    queued when the GPU is too small.
+    """
+
+    name: str
+    config_path: str
+    inference_steps: int
+    guidance_scale: float
+    use_lm: bool = False
+    min_vram_gb: float = 0.0
+
+
+QUALITY_PRESETS: dict[str, QualityPreset] = {
+    "turbo": QualityPreset(
+        name="turbo",
+        config_path="acestep-v15-turbo",
+        inference_steps=8,
+        guidance_scale=7.0,
+    ),
+    "turbo_lm": QualityPreset(
+        name="turbo_lm",
+        config_path="acestep-v15-turbo",
+        inference_steps=8,
+        guidance_scale=7.0,
+        use_lm=True,
+    ),
+    "xl_turbo": QualityPreset(
+        name="xl_turbo",
+        config_path="acestep-v15-xl-turbo",
+        inference_steps=8,
+        guidance_scale=7.0,
+        min_vram_gb=20.0,
+    ),
+    "sft": QualityPreset(
+        name="sft",
+        config_path="acestep-v15-sft",
+        inference_steps=50,
+        guidance_scale=8.0,
+    ),
+}
+
+DEFAULT_QUALITY_PRESET = "turbo"
+
+
+def get_quality_preset(name: str) -> QualityPreset:
+    try:
+        return QUALITY_PRESETS[name]
+    except KeyError:
+        raise KeyError(f"Unknown quality preset: {name}") from None
 
 
 class Settings(BaseSettings):
