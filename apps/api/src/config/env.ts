@@ -45,6 +45,15 @@ const ConfigSchema = z.object({
   MUSIC_LAB_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
   MUSIC_LAB_RETRY_BACKOFF_MS: z.coerce.number().int().min(100).max(10_000).default(500),
 
+  // Cloudflare R2 (S3-compatible). Si falta cualquier valor, el audio se queda
+  // en el Music Lab y se avisa en logs; nunca se inventan credenciales.
+  R2_ACCOUNT_ID:          z.string().optional(),
+  R2_ACCESS_KEY_ID:       z.string().optional(),
+  R2_SECRET_ACCESS_KEY:   z.string().optional(),
+  R2_BUCKET:              z.string().optional(),
+  R2_KEY_PREFIX:          z.string().default('generations'),
+  R2_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(604_800).default(3_600),
+
   PIXEL_DEFAULT_MODEL:  z.string().default('anthropic/claude-3-haiku'),
   PIXEL_ANALYSIS_MODEL: z.string().default('anthropic/claude-3-haiku'),
 

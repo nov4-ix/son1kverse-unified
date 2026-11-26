@@ -19,6 +19,8 @@ import { prisma } from '../../storage/client.js'
 import { config } from '../../config/index.js'
 import { getAuthUserId } from '../request-auth.js'
 import { consumeGenerationQuota, refundGenerationQuota } from '../../services/QuotaService.js'
+import { archiveGenerationAudio } from '../../services/GenerationStorageService.js'
+import { r2, r2KeyFromAudioUrl } from '../../storage/r2.js'
 import { logger } from '../../lib/logger.js'
 
 const MusicLabStemSchema = z.enum(['drums', 'bass', 'other'])
@@ -77,6 +79,7 @@ type GenerationRow = {
   processingStartedAt: Date | null
   processingCompletedAt: Date | null
   processingTimeMs: number | null
+  audioUrl: string | null
 }
 
 async function getOwnedGeneration(jobId: string, userId: string): Promise<GenerationRow> {
@@ -89,6 +92,7 @@ async function getOwnedGeneration(jobId: string, userId: string): Promise<Genera
       processingStartedAt: true,
       processingCompletedAt: true,
       processingTimeMs: true,
+      audioUrl: true,
     },
   })
   if (generation === null) throw new NotFoundError('Job no encontrado')
@@ -219,6 +223,8 @@ export async function syncGeneration(
       },
       'Generación completada',
     )
+
+    await archiveGenerationAudio(generation.userId, job)
   }
 }
 
@@ -358,7 +364,17 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
     try {
       const job = await musicLabClient.getJob(params.data.jobId)
       await syncGeneration(generation, job)
-      return reply.status(200).send(successResponse(job))
+
+      let downloadUrl: string | null = null
+      if (job.status === 'succeeded') {
+        const stored = await prisma.generation.findUnique({
+          where: { externalJobId: params.data.jobId },
+          select: { audioUrl: true },
+        })
+        const key = r2KeyFromAudioUrl(stored?.audioUrl)
+        if (key !== null) downloadUrl = r2.signedGetUrl(key).url
+      }
+      return reply.status(200).send(successResponse({ ...job, download_url: downloadUrl }))
     } catch (error) {
       rethrowUpstream(error)
     }
@@ -371,7 +387,12 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
     if (!query.success) throw new ValidationError(query.error.flatten())
 
     const userId = getAuthUserId(req)
-    await getOwnedGeneration(params.data.jobId, userId)
+    const generation = await getOwnedGeneration(params.data.jobId, userId)
+
+    const storedKey = r2KeyFromAudioUrl(generation.audioUrl)
+    if (storedKey !== null && r2.isConfigured()) {
+      return reply.redirect(r2.signedGetUrl(storedKey).url)
+    }
 
     try {
       const stem: MusicLabStem | undefined = query.data.stem
