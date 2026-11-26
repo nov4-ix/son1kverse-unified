@@ -22,6 +22,7 @@ from app.errors import (
     NotSupportedError,
 )
 from app.ham import HarmonicAligner
+from app.storage import R2Uploader, uploader_from_settings
 from app.mastering.chain import MasteringChain
 from app.schemas import (
     CoverRequest,
@@ -48,9 +49,15 @@ _HAM_MAX_ANALYSIS_S = 60.0
 
 
 class JobManager:
-    def __init__(self, settings: Settings, registry: AdapterRegistry) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        registry: AdapterRegistry,
+        uploader: R2Uploader | None = None,
+    ) -> None:
         self._settings = settings
         self._registry = registry
+        self._uploader: R2Uploader | None = uploader or uploader_from_settings(settings)
         self._jobs: dict[str, Job] = {}
         self._requests: dict[str, JobRequest] = {}
         self._queue: asyncio.Queue[str | None] = asyncio.Queue()
@@ -293,6 +300,7 @@ class JobManager:
             result = await self._apply_ham(result)
             if request.master:
                 result = await asyncio.to_thread(self._apply_mastering, result)
+            result = await self._archive_result(result)
 
             await self._update(
                 job_id,
@@ -320,6 +328,24 @@ class JobManager:
                     details={"type": exc.__class__.__name__},
                 ),
             )
+
+    async def _archive_result(self, result: GenerationResult | StemsResult) -> GenerationResult | StemsResult:
+        """Sube el audio final a R2 (si está configurado) antes de dar el job por terminado."""
+        uploader = self._uploader
+        if uploader is None or not isinstance(result, GenerationResult):
+            return result
+        try:
+            result.metadata["storage"] = await asyncio.to_thread(
+                uploader.upload, Path(result.audio_path), result.job_id
+            )
+        except Exception as exc:  # noqa: BLE001 - el audio sigue en disco; la API tiene respaldo
+            logger.exception("Job %s: fallo la subida a R2", result.job_id)
+            result.metadata["storage"] = {
+                "backend": "r2",
+                "status": "failed",
+                "error": exc.__class__.__name__,
+            }
+        return result
 
     async def _dispatch(
         self, selection: Selection, operation: OperationName, request: JobRequest

@@ -85,6 +85,12 @@ class Settings(BaseSettings):
 
     music_lab_mode: ServiceMode = "simulation"
     music_lab_api_key: str | None = None
+    # Cloudflare R2 (S3-compatible). Si falta cualquiera de los cuatro primeros, no se archiva.
+    r2_account_id: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_bucket: str | None = None
+    r2_key_prefix: str = "generations"
     # Solo para desarrollo local: permite el motor real sin API key.
     music_lab_allow_no_auth: bool = False
     music_lab_output_dir: Path = Path("outputs")

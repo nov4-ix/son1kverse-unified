@@ -13,6 +13,22 @@ import { releaseStorageBytes, reserveStorageBytes } from './StorageQuotaService.
 
 let warnedMissingR2 = false
 
+type PreUploaded = { bucket: string; key: string; sizeBytes: number }
+
+// Music Lab sube el audio final a R2 antes de dar el job por terminado (el worker de
+// GPU puede apagarse y su disco es efímero). Si lo logró, deja el puntero en metadata.
+function preUploadedStorage(job: MusicLabJob): PreUploaded | null {
+  const raw = job.result?.metadata?.['storage']
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const storage = raw as Record<string, unknown>
+  if (storage['backend'] !== 'r2' || storage['status'] !== 'uploaded') return null
+  const bucket = storage['bucket']
+  const key = storage['key']
+  const size = storage['size_bytes']
+  if (typeof bucket !== 'string' || typeof key !== 'string' || key === '') return null
+  return { bucket, key, sizeBytes: typeof size === 'number' && size > 0 ? size : 0 }
+}
+
 function audioExtension(contentType: string, filename: string | null): 'mp3' | 'wav' {
   if (filename?.toLowerCase().endsWith('.mp3') || contentType.includes('mpeg')) {
     return 'mp3'
@@ -34,6 +50,28 @@ export async function archiveGenerationAudio(
         'R2 no configurado: los audios se quedan en Music Lab. Define R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY y R2_BUCKET para archivarlos.',
       )
     }
+    return
+  }
+
+  const pre = preUploadedStorage(job)
+  if (pre !== null && pre.bucket === r2.bucket) {
+    // La generación ya se consumió y el objeto ya existe: se conserva aunque la cuota de
+    // storage no alcance (se avisa en logs); perder un audio pagado es peor que excederla.
+    const reserved = await reserveStorageBytes(userId, pre.sizeBytes)
+    if (!reserved) {
+      logger.warn(
+        { event: 'storage.quota_exceeded_after_upload', jobId: job.job_id, userId, sizeBytes: pre.sizeBytes },
+        'Cuota de storage agotada tras la subida de Music Lab: el audio se conserva igualmente',
+      )
+    }
+    await prisma.generation.updateMany({
+      where: { externalJobId: job.job_id, userId },
+      data: { audioUrl: `r2://${r2.bucket}/${pre.key}` },
+    })
+    logger.info(
+      { event: 'storage.archived', via: 'music-lab', jobId: job.job_id, userId, key: pre.key, sizeBytes: pre.sizeBytes },
+      'Audio ya archivado en R2 por Music Lab',
+    )
     return
   }
 
