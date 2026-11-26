@@ -60,6 +60,44 @@ cotización vigente) y la alternativa de API alojado (p. ej. deAPI.ai, precio po
 generación PENDIENTE de cotizar) para comparar contra serverless propio mientras
 haya pocos usuarios.
 
+## Precios consultados (25-nov-2026) y costo por canción de 3 min
+
+Fuentes: [runpod.io/pricing](https://www.runpod.io/pricing) (tarifas por hora; la página no separa flex/active ni
+aclara Community vs Secure en pods) y [docs.runpod.io/serverless/pricing](https://docs.runpod.io/serverless/pricing.md)
+(reglas de facturación). deAPI: artículo del propio proveedor,
+[dev.to/deapi](https://dev.to/deapi/how-to-generate-ai-music-with-ace-step-api-cheaper-than-suno-5f38), con precios
+tomados de su API el 18-jun-2026 (fuente del vendedor y con 5 meses de antigüedad: **cotizar de nuevo** con
+`POST /api/v2/audio/music/price` antes de decidir).
+
+Reglas de facturación RunPod serverless: se factura por segundo desde que el worker arranca hasta que se detiene
+(incluye el arranque en frío = carga de modelo, y 5 s de espera tras el último job por defecto); un worker "Idle" no se
+factura; volumen de red 0.07 USD/GB-mes (<1 TB); disco de contenedor ~0.10 USD/GB-mes.
+
+Cálculo con el tiempo **medido en T4** (96.5 s por canción de 3 min). Es una **cota superior estimada** para GPUs más
+rápidas que la T4 (A4000/L4/4090); el tiempo real en cada una está PENDIENTE de medir con `ab_quality.py`.
+
+| Opción | Precio | Costo/canción (96.5 s) | Con overhead 30 % | Costo fijo/mes si 24/7 |
+|---|---|---|---|---|
+| RunPod serverless, grupo 16 GB (A4000...) | 0.58 USD/h | 0.0156 | 0.0202 | no aplica (escala a cero) |
+| RunPod serverless, grupo 24 GB (L4, A5000, 3090) | 0.75 USD/h | 0.0201 | 0.0261 | no aplica |
+| RunPod serverless, 4090 | 1.34 USD/h | 0.0359 | 0.0467 | no aplica |
+| Pod A5000 24 GB | 0.27 USD/h | 0.0072 | 0.0094 | ~197 USD |
+| Pod RTX 3090 | 0.50 USD/h | 0.0134 | 0.0174 | ~365 USD |
+| Pod L4 | 0.69 USD/h | 0.0185 | 0.0241 | ~504 USD |
+| Pod RTX 4090 | 0.89 USD/h | 0.0239 | 0.0311 | ~650 USD |
+| deAPI turbo, 3 min | 0.002 USD/canción (jun-2026) | 0.0020 | n/a | 0 |
+| deAPI XL Turbo (INT8), 3 min | 0.0024 USD/canción (jun-2026) | 0.0024 | n/a | 0 |
+
+Lectura: con los números publicados, el API alojado sale ~6-8 veces más barato por canción que serverless propio y no
+tiene costo fijo ni arranque en frío que operar. Un pod 24/7 solo se amortiza con tráfico muy alto (el pod A5000 de
+197 USD/mes equivale a ~100 000 canciones/mes de deAPI turbo). Contrapartida del API de terceros: dependencia del
+proveedor y de su precio, sin control del pipeline (HAM/mastering se harían en un paso propio sobre el audio recibido),
+sin LoRA propio y con datos de usuarios pasando por un tercero. El diseño de adaptadores del repo permite añadir
+un motor "deapi" sin tocar la API.
+
+Prueba barata recomendada antes de decidir: con los 5 USD de créditos gratis de deAPI correr las mismas 5 canciones en
+turbo y en XL Turbo y comparar a oído y con Whisper contra lo generado en T4.
+
 ## Cómo medir
 
 1. Levantar Music Lab con el modelo del preset (`ACE_STEP_CONFIG_PATH`).
