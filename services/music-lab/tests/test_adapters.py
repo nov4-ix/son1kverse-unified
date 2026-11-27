@@ -13,11 +13,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.adapters import ace_step as ace_step_module
-from app.adapters.ace_step import AceStepAdapter, format_keyscale
+from app.adapters.ace_step import AceStepAdapter, force_handler_dtype, format_keyscale
 from app.adapters.registry import AdapterRegistry
 from app.config import Settings
 from app.errors import InvalidRequestError
-from app.schemas import GenerateRequest
+from app.schemas import EngineName, GenerateRequest
 from tests.helpers import run
 
 
@@ -31,6 +31,13 @@ def _settings(tmp_path: Path, **overrides: object) -> Settings:
     return Settings(**values)
 
 
+def _fake_torch() -> types.ModuleType:
+    torch_module = types.ModuleType("torch")
+    for name in ("bfloat16", "float16", "float32"):
+        setattr(torch_module, name, f"torch.{name}")
+    return torch_module
+
+
 def test_simulation_selection(tmp_path: Path) -> None:
     async def scenario() -> None:
         registry = AdapterRegistry(_settings(tmp_path))
@@ -42,37 +49,65 @@ def test_simulation_selection(tmp_path: Path) -> None:
     run(scenario())
 
 
-def test_auto_without_gpu_is_explicit(tmp_path: Path) -> None:
+def test_auto_mode_is_no_longer_accepted(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError):
+        _settings(tmp_path, music_lab_mode="auto")
+
+
+def test_ace_step_mode_never_falls_back_to_simulation(tmp_path: Path) -> None:
     async def scenario() -> None:
-        registry = AdapterRegistry(_settings(tmp_path, music_lab_mode="auto"))
-        try:
-            await registry.select()
-        except Exception as exc:
-            assert exc.__class__.__name__ == "EngineUnavailableError"
-            assert exc.to_payload()["code"] == "ENGINE_UNAVAILABLE"
-        else:
-            raise AssertionError("auto mode should fail without a GPU engine")
-        await registry.close()
-
-    run(scenario())
-
-
-def test_auto_fallback_is_opt_in(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        registry = AdapterRegistry(
-            _settings(
-                tmp_path,
-                music_lab_mode="auto",
-                music_lab_allow_sim_fallback=True,
-            )
-        )
+        registry = AdapterRegistry(_settings(tmp_path, music_lab_mode="ace-step", music_lab_allow_no_auth=True))
         selection = await registry.select()
-        assert selection.mode.value == "simulation"
-        assert selection.fallback_reason is not None
-        assert "ace-step" in selection.fallback_reason
+        assert selection.mode is EngineName.ACE_STEP
+        assert selection.adapter.engine is EngineName.ACE_STEP
         await registry.close()
 
     run(scenario())
+
+
+def test_ace_step_dtype_is_validated(tmp_path: Path) -> None:
+    assert _settings(tmp_path, ace_step_dtype="float32").ace_step_dtype == "float32"
+    with pytest.raises(ValidationError):
+        _settings(tmp_path, ace_step_dtype="float8")
+
+
+def test_force_handler_dtype_moves_every_component() -> None:
+    class FakeComponent:
+        def __init__(self) -> None:
+            self.dtype = "float16"
+            self.calls: list[dict[str, object]] = []
+
+        def to(self, **kwargs: object) -> FakeComponent:
+            self.calls.append(kwargs)
+            self.dtype = str(kwargs["dtype"])
+            return self
+
+    class FakeHandler:
+        def __init__(self) -> None:
+            self.dtype = "float16"
+            self.model = FakeComponent()
+            self.model.decoder = FakeComponent()
+            self.vae = FakeComponent()
+            self.text_encoder = FakeComponent()
+            self.silence_latent = FakeComponent()
+
+    fake_torch = SimpleNamespace(bfloat16="bfloat16", float16="float16", float32="float32")
+    handler = FakeHandler()
+
+    moved = force_handler_dtype(handler, fake_torch, "bfloat16")
+
+    assert moved == ["model", "decoder", "vae", "text_encoder", "silence_latent"]
+    assert handler.dtype == "bfloat16"
+    components = (
+        handler.model,
+        handler.model.decoder,
+        handler.vae,
+        handler.text_encoder,
+        handler.silence_latent,
+    )
+    for component in components:
+        assert component.dtype == "bfloat16"
+        assert component.calls == [{"dtype": "bfloat16"}]
 
 
 def test_ace_step_keyscale_and_caption_mapping(tmp_path: Path) -> None:
@@ -179,7 +214,7 @@ def test_ace_step_load_passes_quantization_and_records_dtype(
 
     handler_module = types.ModuleType("acestep.handler")
     handler_module.AceStepHandler = FakeHandler
-    modules["torch"] = types.ModuleType("torch")
+    modules["torch"] = _fake_torch()
     modules["acestep.handler"] = handler_module
     modules["acestep.inference"] = types.ModuleType("acestep.inference")
     monkeypatch.setattr(
@@ -222,7 +257,7 @@ def test_ace_step_omits_quantization_when_not_configured(
 
     handler_module = types.ModuleType("acestep.handler")
     handler_module.AceStepHandler = FakeHandler
-    modules["torch"] = types.ModuleType("torch")
+    modules["torch"] = _fake_torch()
     modules["acestep.handler"] = handler_module
     modules["acestep.inference"] = types.ModuleType("acestep.inference")
     monkeypatch.setattr(

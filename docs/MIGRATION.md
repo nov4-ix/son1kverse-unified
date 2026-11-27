@@ -182,7 +182,7 @@ Rama: `feat/music-lab`
 Fuentes de solo lectura:
 - `/home/openclaw/genome2/son1k-heart` — HAM (Harmonic Alignment Module) y `post_processing/mastering_chain.py`.
 - `/home/openclaw/genome2/son1kvers3/music-lab` — copia de referencia del pipeline musical.
-- `/home/openclaw/genome2/son1kverse-unified/apps/api/audio_engine` — implementación local de referencia para la API de HeartMuLa (referencia histórica; retirada en §8).
+- `/home/openclaw/genome2/son1kverse-unified/apps/api/audio_engine` — implementación local de referencia del motor anterior (referencia histórica; retirada en §8).
 
 ### 6.1. Qué se portó
 
@@ -215,7 +215,7 @@ Fuentes de solo lectura:
 ### 6.3. Decisiones conservadoras
 
 - **CPU por defecto**: `MUSIC_LAB_MODE=simulation` y las dependencias base no
-  incluyen torch, transformers, ACE-Step ni HeartMuLa.
+  incluyen torch, transformers, ACE-Step ni el motor anterior.
 - **ACE-Step 1.5**: API verificada contra el repo oficial
   `ace-step/ACE-Step-1.5` (paquete `acestep` 1.5.0):
   `AceStepHandler.initialize_service()` descarga los checkpoints de
@@ -223,13 +223,13 @@ Fuentes de solo lectura:
   El adaptador soporta `generate`, `repaint` y `cover`; `stems` responde 501
   porque el pipeline no expone separación drums/bass/other. El modo DiT-only
   (`ACE_STEP_USE_LM=false`) no requiere `nano-vllm`.
-- **HeartMuLa**: sólo `generate`; se confirmó el uso de
-  `heartlib.HeartMuLaGenPipeline` leyendo `apps/api/audio_engine`. `repaint`,
-  `cover` y `stems` responden 501. `health()` exige torch, heartlib, pesos y
-  CUDA/bitsandbytes (si el device es CUDA). Retirado en §8 por consumo de VRAM.
-- **Auto**: ACE-Step → HeartMuLa → error explícito (desde §8 solo ACE-Step). Nunca usa un proveedor
-  externo. Sólo cae a simulation con `MUSIC_LAB_ALLOW_SIM_FALLBACK=true`, y el
-  resultado se marca con `mode=simulation`.
+- **Motor anterior**: sólo `generate`; su pipeline se leyó desde
+  `apps/api/audio_engine`. `repaint`, `cover` y `stems` respondían 501.
+  `health()` exigía torch, su librería, pesos y CUDA (si el device era CUDA).
+  Retirado en §8 por consumo de VRAM.
+- **Selección de motor**: `simulation` o `ace-step`, sin modo `auto` ni
+  fallback silencioso. Si el motor solicitado no está listo, el job falla con
+  `ENGINE_UNAVAILABLE`. Nunca se usa un proveedor externo.
 - **Rutas de audio**: `repaint`, `cover` y `stems` sólo aceptan archivos dentro
   de `MUSIC_LAB_OUTPUT_DIR` para evitar lecturas arbitrarias del filesystem.
 - **Formato**: WAV y MP3 vía libsndfile. Si el build de libsndfile no trae MP3,
@@ -322,14 +322,15 @@ No reescribe el historial de §1–§7.
 
 - Se eliminaron `apps/api/audio_engine/`, `Dockerfile.audio-engine`,
   `docker-compose.audio-engine.yml`, `AudioEngineClient`, los scripts de
-  despliegue GPU legacy y las variables `AUDIO_ENGINE_*` / `MUSICGEN_API_URL`.
+  despliegue GPU legacy y las variables de entorno del motor anterior.
 - `Pixel.orchestrate` y `Pixel.orchestrateCoherentSong` hablan solo con
   `musicLabClient`. La canción coherente es single-shot: letra estructurada +
   style tags → un job → un WAV. Se eliminó el job store en memoria y
   `/coherent-status`.
-- ACE-Step es el único motor GPU. HeartMuLa se retiró (adapter, configuración,
-  enum de API y modo `auto`) por su consumo de VRAM; `auto` solo evalúa
-  ACE-Step. Los checkpoints fine-tuneados se montan por configuración, según
+- ACE-Step es el único motor GPU. El motor anterior se retiró (adapter,
+  configuración y enum de API) por su consumo de VRAM, y después se eliminó el
+  modo `auto` y el fallback a simulación: sólo quedan `simulation` y
+  `ace-step`. Los checkpoints fine-tuneados se montan por configuración, según
   `services/music-lab/DEPLOY_GPU_GUIDE.md`.
 - Se eliminaron las rutas `/audio/*`. La descarga de audio de Pixel usa
   `GET /api/v1/artifacts/:artifactId/audio`, con verificación de dueño y ruta
@@ -430,8 +431,8 @@ Ejecutado en el host de la rama:
 - Se corrigió el bloqueo del event loop de `simulation` con
   `asyncio.to_thread`; el job coherente de 180 s terminó en ~10 s y el polling
   dejó de agotar el timeout de 15 s.
-- `/v1/capabilities` expone solo `simulation` y `ace-step`; `engine=heartmula`
-  se rechaza con 400 en la API y 422 en Music Lab.
+- `/v1/capabilities` expone solo `simulation` y `ace-step`; un `engine`
+  retirado se rechaza con 400 en la API y 422 en Music Lab.
 - `make -n` de todos los targets validado con una copia local de GNU Make
   (`make` no estaba instalado en el host).
 
@@ -440,5 +441,8 @@ No ejecutado:
 - `docker compose up` y `docker build`: Docker no está instalado en el host de
   verificación.
 - Motor ACE-Step real: requiere GPU y pesos; solo se verificó `simulation`.
+- Comportamiento real en T4 (NaN/silencio, calidad de audio y tiempos de
+  inferencia con `ACE_STEP_DTYPE=bfloat16`): queda pendiente de validación del
+  usuario en Kaggle. Los tests añadidos usan fakes y no sustituyen esa prueba.
 - GitHub Actions: el YAML no se ejecutó desde este entorno; queda para el
   primer push a GitHub.

@@ -36,7 +36,6 @@ export enum ProviderType {
   OPENAI       = 'openai',
   OPENROUTER   = 'openrouter',
   OLLAMA       = 'ollama',
-  MUSICGEN     = 'musicgen',
   STABLE_AUDIO = 'stable_audio',
   ACE_STEP     = 'ace_step',   // Motor de base musical extrema velocidad (diffusion)
 }

@@ -40,6 +40,7 @@ from app.audio import (
     read_audio,
     resample_if_needed,
     resolve_output_file,
+    validate_generated_audio,
     write_audio,
 )
 from app.config import Settings, get_quality_preset, get_settings
@@ -84,6 +85,45 @@ def format_keyscale(key: str) -> str:
     else:
         mode = suffix
     return f"{note} {mode}"
+
+
+def force_handler_dtype(handler: Any, torch_module: Any, dtype_name: str) -> list[str]:
+    """Force the configured dtype on every tensor-bearing ACE-Step component.
+
+    ``AceStepHandler.initialize_service()`` chooses float16 on pre-Ampere GPUs
+    such as the T4, which produces NaN latents. Updating ``handler.dtype`` is
+    not enough because the already-loaded modules keep their original dtype,
+    so each component is moved explicitly after initialization.
+    """
+    dtype = getattr(torch_module, dtype_name)
+    handler.dtype = dtype
+    model = getattr(handler, "model", None)
+    components = (
+        ("model", model),
+        ("decoder", getattr(model, "decoder", None)),
+        ("vae", getattr(handler, "vae", None)),
+        ("text_encoder", getattr(handler, "text_encoder", None)),
+        ("silence_latent", getattr(handler, "silence_latent", None)),
+    )
+    moved: list[str] = []
+    for name, component in components:
+        if component is None:
+            continue
+        try:
+            moved_component = component.to(dtype=dtype)
+            if name == "silence_latent":
+                handler.silence_latent = moved_component
+            elif name == "decoder":
+                handler.model.decoder = moved_component
+            else:
+                setattr(handler, name, moved_component)
+        except (AttributeError, TypeError, ValueError, RuntimeError) as exc:
+            raise EngineUnavailableError(
+                f"Could not force ACE-Step dtype on {name}",
+                details={"dtype": dtype_name, "component": name, "reason": str(exc)},
+            ) from exc
+        moved.append(name)
+    return moved
 
 
 class AceStepAdapter(AudioGeneratorInterface):
@@ -197,7 +237,7 @@ class AceStepAdapter(AudioGeneratorInterface):
 
     def _load_sync(self) -> None:
         # Heavy imports stay here on purpose.
-        importlib.import_module("torch")
+        torch = importlib.import_module("torch")
         self._checkpoints_dir.mkdir(parents=True, exist_ok=True)
         # The official loader reads this variable first (see acestep.model_downloader).
         os.environ["ACESTEP_CHECKPOINTS_DIR"] = str(self._checkpoints_dir)
@@ -227,6 +267,8 @@ class AceStepAdapter(AudioGeneratorInterface):
                     "config_path": self._settings.ace_step_config_path,
                 },
             )
+        force_handler_dtype(dit_handler, torch, self._settings.ace_step_dtype)
+
         actual_dtype = getattr(dit_handler, "dtype", None)
         self._effective_dtype = (
             str(actual_dtype).removeprefix("torch.") if actual_dtype is not None else None
@@ -383,7 +425,8 @@ class AceStepAdapter(AudioGeneratorInterface):
         raw_dir.mkdir(parents=True, exist_ok=True)
         use_cuda = wants_cuda(self._settings.ace_step_device) and cuda_available()
         torch = importlib.import_module("torch") if use_cuda else None
-        if torch is not None:
+        if use_cuda:
+            force_handler_dtype(self._dit_handler, torch, self._settings.ace_step_dtype)
             torch.cuda.synchronize()
             torch.cuda.reset_peak_memory_stats()
         started_at = time.perf_counter()
@@ -426,6 +469,9 @@ class AceStepAdapter(AudioGeneratorInterface):
                 )
 
             array = ensure_stereo(np.asarray(array, dtype=np.float32))
+            validate_generated_audio(
+                array, engine=self.engine.value, operation=operation
+            )
             target_sr = self._settings.music_lab_sample_rate
             array = resample_if_needed(array, native_sr, target_sr)
             write_audio(output_path, array, target_sr, req.output_format)
@@ -433,7 +479,7 @@ class AceStepAdapter(AudioGeneratorInterface):
         finally:
             shutil.rmtree(raw_dir, ignore_errors=True)
 
-        if torch is not None:
+        if use_cuda:
             torch.cuda.synchronize()
             peak_vram_bytes = int(torch.cuda.max_memory_reserved())
         else:
@@ -469,8 +515,8 @@ class AceStepAdapter(AudioGeneratorInterface):
             "compute": {
                 "device": self._settings.ace_step_device,
                 "inference_seconds": inference_seconds,
-                "gpu_seconds": inference_seconds if torch is not None else None,
-                "peak_vram_bytes": peak_vram_bytes if torch is not None else None,
+                "gpu_seconds": inference_seconds if use_cuda else None,
+                "peak_vram_bytes": peak_vram_bytes if use_cuda else None,
                 "phase_seconds": phase_seconds,
                 "gpu_seconds_by_phase": gpu_seconds_by_phase,
             },

@@ -122,32 +122,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def health() -> ServiceHealth:
         snapshot = await registry.health_snapshot()
         mode = resolved.music_lab_mode
-        selected: AdapterHealth | None = None
-        reasons: list[str] = []
-        if mode == "auto":
-            for engine in (EngineName.ACE_STEP,):
-                candidate = snapshot[engine]
-                if candidate.ready:
-                    selected = candidate
-                    break
-                reasons.append(f"{engine.value}: {candidate.reason or 'not ready'}")
-        else:
-            try:
-                engine = EngineName(mode)
-            except ValueError:
-                reasons.append(f"unknown mode: {mode}")
-            else:
-                selected = snapshot[engine]
-                if not selected.ready:
-                    reasons.append(selected.reason or "not ready")
-        ready = selected is not None and selected.ready
+        selected: AdapterHealth = snapshot[EngineName(mode)]
+        ready = selected.ready
         return ServiceHealth(
             status="ok" if ready else "degraded",
             service=resolved.service_name,
             version=resolved.service_version,
             mode=mode,
             engine=selected if ready else None,
-            reason=None if ready else "; ".join(reasons) or "no engine available",
+            reason=None if ready else selected.reason or "engine not ready",
         )
 
     @app.get("/v1/capabilities", response_model=Capabilities, tags=["system"])

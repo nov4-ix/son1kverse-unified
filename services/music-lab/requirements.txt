@@ -1,4 +1,4 @@
-# Base CPU-only dependencies. Never add torch/transformers/heartlib/acestep here.
+# Base CPU-only dependencies. Never add torch/transformers/acestep here.
 fastapi>=0.111,<1
 uvicorn[standard]>=0.29,<1
 pydantic>=2.6,<3

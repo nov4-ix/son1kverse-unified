@@ -10,7 +10,8 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ServiceMode = Literal["simulation", "ace-step", "auto"]
+ServiceMode = Literal["simulation", "ace-step"]
+AceStepDType = Literal["bfloat16", "float16", "float32"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +96,6 @@ class Settings(BaseSettings):
     music_lab_allow_no_auth: bool = False
     music_lab_output_dir: Path = Path("outputs")
     music_lab_max_concurrency: int = Field(default=1, ge=1, le=8)
-    music_lab_allow_sim_fallback: bool = False
     # Retención de jobs en memoria. Al expirar se elimina el job y, si está
     # dentro de MUSIC_LAB_OUTPUT_DIR, su audio. 0 desactiva el TTL.
     music_lab_job_ttl_hours: float = Field(default=24.0, ge=0)
@@ -107,7 +107,7 @@ class Settings(BaseSettings):
 
     ace_step_model_path: Path = Path("/models/ace-step")
     ace_step_device: str = "cuda"
-    ace_step_dtype: Literal["bfloat16", "float16", "float32"] = "bfloat16"
+    ace_step_dtype: AceStepDType = "bfloat16"
     ace_step_quantization: str | None = None
     ace_step_offload: bool = False
     ace_step_python_module: str = "acestep"

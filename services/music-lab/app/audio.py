@@ -7,10 +7,32 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from app.errors import InvalidRequestError, OutputFormatError
+from app.errors import InvalidAudioError, InvalidRequestError, OutputFormatError
 from app.schemas import OutputFormat
 
 AudioArray = np.ndarray
+SILENCE_PEAK_THRESHOLD = 1e-6
+
+
+def validate_generated_audio(
+    audio: AudioArray, *, engine: str, operation: str
+) -> None:
+    """Reject non-finite samples and fully silent renders before writing files."""
+    data = np.asarray(audio, dtype=np.float32)
+    context = {"engine": engine, "operation": operation}
+    if data.size == 0 or (data.ndim >= 2 and data.shape[-1] == 0):
+        raise InvalidAudioError("Generated audio is empty", details=context)
+    if not np.isfinite(data).all():
+        raise InvalidAudioError(
+            "Generated audio contains NaN or Inf samples",
+            details={**context, "reason": "non_finite"},
+        )
+    peak = float(np.max(np.abs(data)))
+    if peak <= SILENCE_PEAK_THRESHOLD:
+        raise InvalidAudioError(
+            "Generated audio is silent",
+            details={**context, "reason": "silence", "peak": peak},
+        )
 
 
 def ensure_stereo(audio: AudioArray) -> AudioArray:

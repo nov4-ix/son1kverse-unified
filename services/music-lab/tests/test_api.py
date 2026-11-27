@@ -221,14 +221,14 @@ def test_mastering_phase_is_recorded_in_compute() -> None:
     assert result.metadata["compute"]["gpu_seconds_by_phase"]["mastering"] == 0.0
 
 
-def test_auto_mode_without_gpu_fails_cleanly(tmp_path: Path) -> None:
+def test_ace_step_without_gpu_fails_cleanly(tmp_path: Path) -> None:
     async def scenario() -> None:
-        config = settings(tmp_path, music_lab_mode="auto")
+        config = settings(tmp_path, music_lab_mode="ace-step", music_lab_allow_no_auth=True)
         async with make_client(config) as (_, client):
             health = (await client.get("/health")).json()
             assert health["status"] == "degraded"
             assert health["engine"] is None
-            assert "ace-step" in health["reason"]
+            assert health["reason"]
 
             job = await submit_and_wait(
                 client, "/v1/generate", {"prompt": "x", "duration_s": 0.5}
@@ -253,12 +253,12 @@ def test_unsupported_operation_fails_in_job(tmp_path: Path) -> None:
     run(scenario())
 
 
-def test_heartmula_engine_is_no_longer_accepted(tmp_path: Path) -> None:
+def test_retired_engine_is_rejected(tmp_path: Path) -> None:
     async def scenario() -> None:
         async with make_client(settings(tmp_path)) as (_, client):
             response = await client.post(
                 "/v1/generate",
-                json={"prompt": "x", "duration_s": 0.5, "engine": "heartmula"},
+                json={"prompt": "x", "duration_s": 0.5, "engine": "retired-engine"},
             )
             assert response.status_code == 422
             assert response.json()["code"] == "INVALID_REQUEST"

@@ -9,10 +9,9 @@ No usa APIs externas de generación.
 |---|---|---|
 | `simulation` (default) | Síntesis determinista numpy | Ninguno (CPU) |
 | `ace-step` | ACE-Step 1.5 | CUDA + `acestep` + pesos |
-| `auto` | ACE-Step → error | GPU disponible |
 
-`auto` nunca cae a simulation salvo `MUSIC_LAB_ALLOW_SIM_FALLBACK=true`.
-HeartMuLa fue retirado: su consumo de VRAM no es viable para este proyecto.
+No hay fallback automático entre modos: si `ace-step` no está listo, el job
+falla con `ENGINE_UNAVAILABLE` en lugar de devolver audio simulado.
 
 ## Desarrollo (CPU)
 

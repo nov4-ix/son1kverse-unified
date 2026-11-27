@@ -78,3 +78,9 @@ class JobExecutionError(MusicLabError):
     code = "JOB_FAILED"
     status_code = 500
     message = "Job execution failed"
+
+
+class InvalidAudioError(MusicLabError):
+    code = "INVALID_AUDIO"
+    status_code = 500
+    message = "Generated audio is invalid"

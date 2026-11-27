@@ -24,7 +24,6 @@ Estética: ${profile.aesthetics.join(', ')}
 REGLAS:
 - Los prompts deben describir el sonido, no el concepto.
 - Incluye: instrumentos, tempo, atmósfera, dinámica, referencia de producción.
-- Para MusicGen: prompts cortos, descriptivos, en inglés (mejor performance).
 - Para motores locales: puedes incluir estructura, mood y dinámica.
 - Responde con JSON válido.`
   }
@@ -43,7 +42,6 @@ ${memCtx}
 
 Responde SOLO con este JSON (sin markdown):
 {
-  "musicgen": "prompt en inglés optimizado para MusicGen, máx 200 chars",
   "prompt": "prompt detallado con mood, estructura y dinámica",
   "description": "descripción del resultado esperado en español",
   "bpm": 120,
@@ -59,7 +57,7 @@ Responde SOLO con este JSON (sin markdown):
       content = JSON.parse(clean) as Record<string, unknown>
     } catch {
       // Si no parsea como JSON, guardar como texto plano
-      content = { raw, musicgen: raw, prompt: raw }
+      content = { raw, prompt: raw }
     }
 
     const activeProvider = (context.provider as { type?: string } | undefined) ?? this.provider

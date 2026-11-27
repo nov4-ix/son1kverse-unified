@@ -12,7 +12,7 @@ Monorepo unificado que consolida la arquitectura backend, el motor neuronal de s
 - **`packages/shared-types`** (`@son1k/shared-types`): Planes, límites de generación/almacenamiento y personalidad de Pixel compartidos por API y Web.
 - **`packages/shared-ui`** (`@son1k/shared-ui`): Componentes vectoriales oficiales (`PlatformLogo`, `AlvaeSymbol`) y controles táctiles (`LiteraryKnob`).
 - **`services/music-lab`**: Microservicio Python 3.11–3.13 + FastAPI aislado para generación de audio soberana (sin dependencias de APIs de terceros):
-  - **Motor neuronal:** **ACE-Step 1.5** (generación completa, *repainting* y *covers*), con soporte para checkpoints fine-tuneados. HeartMuLa fue descartado por su consumo de VRAM.
+  - **Motor neuronal:** **ACE-Step 1.5** (generación completa, *repainting* y *covers*), con soporte para checkpoints fine-tuneados.
   - **Pipeline:** ACE-Step → **HAM** (análisis de key/BPM/energía/espectro, acotado a 60 s por track) → **MasteringChain** (-14 LUFS) cuando `master=true`.
   - **DSP Propio:** **HAM** (*Harmonic Alignment Module*) y **`MasteringChain`** (-14 LUFS).
   - **Modo CPU (`simulation`):** Síntesis determinista en CPU para desarrollo local sin GPU y `Dockerfile.gpu` listo para despliegue Serverless GPU (RunPod / Modal). Notebook T4: `services/music-lab/notebooks/colab_t4_ace_step.ipynb`.

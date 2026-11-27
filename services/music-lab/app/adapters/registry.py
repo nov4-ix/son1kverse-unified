@@ -16,8 +16,6 @@ from app.schemas import AdapterHealth, EngineName
 class Selection:
     adapter: AudioGeneratorInterface
     mode: EngineName
-    requested_engine: EngineName | None
-    fallback_reason: str | None = None
 
 
 class AdapterRegistry:
@@ -33,10 +31,6 @@ class AdapterRegistry:
     def get(self, engine: EngineName) -> AudioGeneratorInterface:
         return self._adapters[engine]
 
-    @property
-    def configured_mode(self) -> str:
-        return self._settings.music_lab_mode
-
     async def health(self, engine: EngineName) -> AdapterHealth:
         return await self._adapters[engine].health()
 
@@ -44,68 +38,18 @@ class AdapterRegistry:
         return {engine: await adapter.health() for engine, adapter in self._adapters.items()}
 
     async def select(self, requested: EngineName | None = None) -> Selection:
-        if requested is not None:
-            return Selection(
-                adapter=self._adapters[requested],
-                mode=requested,
-                requested_engine=requested,
-            )
-
-        mode = self._settings.music_lab_mode
-        if mode == EngineName.SIMULATION.value:
-            return Selection(
-                adapter=self._adapters[EngineName.SIMULATION],
-                mode=EngineName.SIMULATION,
-                requested_engine=None,
-            )
-        if mode == EngineName.ACE_STEP.value:
-            return Selection(
-                adapter=self._adapters[EngineName.ACE_STEP],
-                mode=EngineName.ACE_STEP,
-                requested_engine=None,
-            )
-        if mode != "auto":
+        engine = requested or EngineName(self._settings.music_lab_mode)
+        try:
+            adapter = self._adapters[engine]
+        except KeyError as exc:
             raise EngineUnavailableError(
-                "Unknown MUSIC_LAB_MODE",
-                details={"mode": mode},
-            )
-        return await self._select_auto()
-
-    async def _select_auto(self) -> Selection:
-        checked: dict[str, str] = {}
-        for engine in (EngineName.ACE_STEP,):
-            health = await self._adapters[engine].health()
-            if health.ready:
-                return Selection(
-                    adapter=self._adapters[engine],
-                    mode=engine,
-                    requested_engine=None,
-                )
-            checked[engine.value] = health.reason or "not ready"
-
-        if self._settings.music_lab_allow_sim_fallback:
-            return Selection(
-                adapter=self._adapters[EngineName.SIMULATION],
-                mode=EngineName.SIMULATION,
-                requested_engine=None,
-                fallback_reason="; ".join(f"{name}: {reason}" for name, reason in checked.items()),
-            )
-
-        raise EngineUnavailableError(
-            "No GPU engine is ready in auto mode",
-            details={
-                "mode": "auto",
-                "checked": checked,
-                "allow_sim_fallback": False,
-                "hint": (
-                    "Install a GPU engine and mount its weights, or select "
-                    "MUSIC_LAB_MODE=simulation explicitly"
-                ),
-            },
-        )
+                "Unknown generation engine",
+                details={"engine": engine.value},
+            ) from exc
+        return Selection(adapter=adapter, mode=engine)
 
     def modes(self) -> list[str]:
-        return [mode.value for mode in EngineName] + ["auto"]
+        return [mode.value for mode in EngineName]
 
     def engines(self) -> list[EngineName]:
         return list(self._adapters)

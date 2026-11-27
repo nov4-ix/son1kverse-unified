@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from app.adapters.simulation import render_simulation
+from app.audio import validate_generated_audio
+from app.errors import InvalidAudioError
 from app.ham import (
     HarmonicAligner,
     concatenate_with_crossfade,
@@ -35,6 +38,23 @@ def test_bpm_and_key_detection_run_on_cpu() -> None:
     assert abs(bpm - 120.0) < 3.0
     assert 0.0 <= key.confidence <= 1.0
     assert key.key_name
+
+
+def test_generated_audio_validation_rejects_nan_and_silence() -> None:
+    valid = render_simulation(_request(0.5), 44100).mix
+    validate_generated_audio(valid, engine="ace-step", operation="generate")
+
+    with_nan = valid.copy()
+    with_nan[0, 10] = np.nan
+    with pytest.raises(InvalidAudioError) as nan_error:
+        validate_generated_audio(with_nan, engine="ace-step", operation="generate")
+    assert "NaN" in nan_error.value.message
+
+    with pytest.raises(InvalidAudioError) as silence_error:
+        validate_generated_audio(
+            np.zeros((2, 100), dtype=np.float32), engine="ace-step", operation="generate"
+        )
+    assert "silent" in silence_error.value.message.lower()
 
 
 def test_harmonic_aligner_reports_unported_operations() -> None:

@@ -294,9 +294,6 @@ class JobManager:
             result = await self._dispatch(selection, job.operation, request)
             result.job_id = job_id
             result.mode = selection.mode
-            if selection.fallback_reason:
-                result.metadata["fallback_reason"] = selection.fallback_reason
-                result.metadata["requested_mode"] = self._settings.music_lab_mode
             result = await self._apply_ham(result)
             if request.master:
                 result = await asyncio.to_thread(self._apply_mastering, result)
