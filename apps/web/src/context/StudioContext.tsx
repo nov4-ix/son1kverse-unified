@@ -3,12 +3,14 @@ import {
   api,
   ApiError,
   isGenerationResult,
+  isStemsResult,
   jobAudioUrl,
   type GenerationHistoryItem,
   type JobStatus,
   type MusicCapabilities,
   type MusicJob,
   type QualityPreset,
+  type StemsResult,
 } from '../lib/api'
 import { useAuth } from './AuthContext'
 import { orchestrateAandR } from '../lib/pixelAandR'
@@ -43,6 +45,11 @@ type StudioContextValue = {
   lastGenerationId: string | null
   lastJobId: string | null
   lastAudioUrl: string | null
+  masterAudioUrl: string | null
+  masterBpm: number | null
+  masterJobId: string | null
+  stems: StemsResult['stems'] | null
+  stemsJobId: string | null
   busy: boolean
   error: string | null
   releases: ReleaseDraft[]
@@ -68,6 +75,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [lastAudioPath, setLastAudioPath] = useState<string | null>(null)
   const [lastGenerationId, setLastGenerationId] = useState<string | null>(null)
   const [lastJobId, setLastJobId] = useState<string | null>(null)
+  const [masterAudioUrl, setMasterAudioUrl] = useState<string | null>(null)
+  const [masterBpm, setMasterBpm] = useState<number | null>(null)
+  const [masterJobId, setMasterJobId] = useState<string | null>(null)
+  const [stems, setStems] = useState<StemsResult['stems'] | null>(null)
+  const [stemsJobId, setStemsJobId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [releases, setReleases] = useState<ReleaseDraft[]>([])
@@ -130,7 +142,22 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       })
       setJob(finished); setJobStatus(finished.status)
       if (finished.status === 'failed') { setError(finished.error?.message ?? 'Job fallido'); return }
-      if (isGenerationResult(finished.result)) { setLastAudioPath(finished.result.audio_path); setLastJobId(finished.job_id) }
+      if (isGenerationResult(finished.result)) {
+        setLastAudioPath(finished.result.audio_path)
+        setLastJobId(finished.job_id)
+        setMasterAudioUrl(jobAudioUrl(finished.job_id))
+        setMasterJobId(finished.job_id)
+        setMasterBpm(
+          typeof finished.result.metadata?.['bpm'] === 'number'
+            ? finished.result.metadata['bpm'] as number
+            : null,
+        )
+      }
+
+      if (isStemsResult(finished.result)) {
+        setStems(finished.result.stems)
+        setStemsJobId(finished.job_id)
+      }
       setPixelSignal(signalForJob(finished.status))
       void refreshGenerations()
     } catch (cause) {
@@ -209,6 +236,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       lastGenerationId,
       lastJobId,
       lastAudioUrl,
+      masterAudioUrl,
+      masterBpm,
+      masterJobId,
+      stems,
+      stemsJobId,
       busy,
       error,
       releases,
@@ -222,7 +254,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       splitStems,
       addRelease,
     }),
-    [addRelease, busy, capabilities, cover, error, generate, generations, generationsLoading, job, jobStatus, knobs, lastAudioPath, lastAudioUrl, lastGenerationId, lastJobId, pixelSignal, refreshGenerations, releases, repaint, setKnob, splitStems, view],
+    [addRelease, busy, capabilities, cover, error, generate, generations, generationsLoading, job, jobStatus, knobs, lastAudioPath, lastAudioUrl, masterAudioUrl, masterBpm, masterJobId, stems, stemsJobId, lastGenerationId, lastJobId, pixelSignal, refreshGenerations, releases, repaint, setKnob, splitStems, view],
   )
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>
 }

@@ -1,0 +1,55 @@
+:root {
+  --alvae-void: #07080A;
+  --alvae-carbon: #0A0B0E;
+  --alvae-panel: #12151C;
+  --alvae-raised: #181C24;
+  --alvae-line: #242832;
+  --alvae-line-strong: #343A46;
+  --alvae-bone: #E7E5E4;
+  --alvae-ash: #8A8478;
+  --alvae-gold: #D4A359;
+  --alvae-ember: #F59E0B;
+  --alvae-phosphor: #10B981;
+  --alvae-signal: #7DA2FF;
+  --alvae-violet: #C084FC;
+  --alvae-danger: #E5484D;
+
+  --studio-bg: var(--alvae-void);
+  --studio-surface: var(--alvae-carbon);
+  --studio-panel: var(--alvae-panel);
+  --studio-raised: var(--alvae-raised);
+  --studio-border: var(--alvae-line);
+  --studio-border-strong: var(--alvae-line-strong);
+  --studio-text: var(--alvae-bone);
+  --studio-text-muted: var(--alvae-ash);
+  --studio-accent: var(--alvae-gold);
+  --studio-accent-strong: var(--alvae-ember);
+  --studio-playhead: var(--alvae-gold);
+  --studio-selection: rgb(212 163 89 / 0.16);
+  --studio-focus: var(--alvae-gold);
+  --studio-danger: var(--alvae-danger);
+  --studio-grid: rgb(231 229 228 / 0.06);
+
+  --studio-track-master: var(--alvae-bone);
+  --studio-track-drums: var(--alvae-violet);
+  --studio-track-bass: var(--alvae-phosphor);
+  --studio-track-other: var(--alvae-signal);
+
+  --transport-height: 3.5rem;
+  --ruler-height: 1.75rem;
+  --track-height: 4.5rem;
+  --track-header-width: 11rem;
+  --control-height: 1.75rem;
+  --readout-time-width: 9ch;
+  --readout-bpm-width: 3ch;
+  --readout-meter-width: 5ch;
+  --studio-radius: 3px;
+  --studio-font-mono: ui-monospace, "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+.studio-readout {
+  font-family: var(--studio-font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
