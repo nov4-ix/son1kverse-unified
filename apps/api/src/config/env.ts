@@ -20,7 +20,7 @@ const OptionalUrlFromEnv = z.preprocess(
   z.string().url().optional(),
 )
 
-const ConfigSchema = z.object({
+export const ConfigSchema = z.object({
   NODE_ENV:    z.enum(['development', 'production', 'test']).default('development'),
   PORT:        z.coerce.number().default(3001),
   HOST:        z.string().default('0.0.0.0'),
@@ -32,7 +32,8 @@ const ConfigSchema = z.object({
   // Los ADMIN no consumen cuota cuando esto es true.
   ADMIN_UNLIMITED: BooleanFromString.default(true),
 
-  DATABASE_URL: z.string().default('postgresql://son1kverse:son1kverse@localhost:5432/son1kverse?schema=public'),
+  // Sin default: en producción debe venir explícita del entorno.
+  DATABASE_URL: z.string().min(1).optional(),
 
   JWT_SECRET:     z.string()
     .min(32, 'JWT_SECRET debe tener al menos 32 chars')
@@ -68,8 +69,25 @@ const ConfigSchema = z.object({
 
   LOG_LEVEL:       z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
   SYSTEM_VERSION:  z.string().default('0.1.0'),
+}).superRefine((data, ctx) => {
+  if (data.NODE_ENV !== 'production') return
+  if (data.DATABASE_URL === undefined || data.DATABASE_URL.trim() === '') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['DATABASE_URL'],
+      message: 'DATABASE_URL es obligatoria cuando NODE_ENV=production',
+    })
+  }
+  if (data.MUSIC_LAB_API_KEY.trim() === '') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['MUSIC_LAB_API_KEY'],
+      message: 'MUSIC_LAB_API_KEY es obligatoria cuando NODE_ENV=production',
+    })
+  }
 }).transform((data) => ({
   ...data,
+  DATABASE_URL: data.DATABASE_URL ?? 'postgresql://son1kverse:son1kverse@localhost:5432/son1kverse?schema=public',
   // En desarrollo local (o sin nodo XL dedicado), MUSIC_LAB_XL_URL cae a MUSIC_LAB_URL.
   MUSIC_LAB_XL_URL: data.MUSIC_LAB_XL_URL ?? data.MUSIC_LAB_URL,
 }))
