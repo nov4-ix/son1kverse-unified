@@ -4,7 +4,7 @@ import type { IAgent, IProvider } from '../../core/interfaces.js'
 import type { AgentContext, ArtistProfile, CreativeResult, CreativeIntent } from '../../core/types.js'
 import { AgentExecutionError } from '../../core/errors.js'
 import { eventBus, SystemEvent } from '../../core/events.js'
-import { buildPixelPersonalityPrompt, selectPixelTone } from '../../core/pixel/pixelPersonality.js'
+import { buildPixelPersonalityPrompt, selectPixelTone } from '@son1k/shared-types'
 import { randomUUID } from 'crypto'
 
 export abstract class BaseAgent implements IAgent {
@@ -19,7 +19,7 @@ export abstract class BaseAgent implements IAgent {
   abstract formatResult(raw: string, context: AgentContext): CreativeResult
 
   async execute(context: AgentContext): Promise<CreativeResult> {
-    const { intent, profile } = context
+    const { profile } = context
     const start = Date.now()
 
     try {

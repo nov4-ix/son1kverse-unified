@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { isStemsResult } from '../lib/api'
 import { stemUrl, useStudio } from '../context/StudioContext'
+import { AuthedAudio } from '../components/AuthedAudio'
+import { useAuthorizedAudio } from '../lib/useAuthorizedAudio'
 
 function drawWaveform(
   canvas: HTMLCanvasElement,
@@ -53,9 +55,10 @@ export function GhostStudioView() {
     repaint,
     cover,
     splitStems,
+    capabilities,
   } = useStudio()
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const audioRef = useRef<HTMLAudioElement>(null)
+  const { buffer } = useAuthorizedAudio(lastAudioUrl)
   const [peaks, setPeaks] = useState<Float32Array>(new Float32Array(0))
   const [duration, setDuration] = useState(30)
   const [startS, setStartS] = useState(0)
@@ -63,12 +66,10 @@ export function GhostStudioView() {
   const [prompt, setPrompt] = useState('Repintar la herida. Dejar el polvo.')
 
   useEffect(() => {
-    if (lastAudioUrl === null) return
+    if (buffer === null) return
     const audioContext = new AudioContext()
     let cancelled = false
-    void fetch(lastAudioUrl)
-      .then((response) => response.arrayBuffer())
-      .then((buffer) => audioContext.decodeAudioData(buffer))
+    void audioContext.decodeAudioData(buffer.slice(0))
       .then((decoded) => {
         if (cancelled) return
         const channel = decoded.getChannelData(0)
@@ -95,7 +96,7 @@ export function GhostStudioView() {
       cancelled = true
       void audioContext.close()
     }
-  }, [lastAudioUrl])
+  }, [buffer])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -104,6 +105,7 @@ export function GhostStudioView() {
     drawWaveform(canvas, peaks, startS / safeDuration, endS / safeDuration)
   }, [duration, endS, peaks, startS])
 
+  const stemsSupported = capabilities.supports_stems
   const jobResult = job?.result ?? null
   const stems = isStemsResult(jobResult) ? jobResult.stems : undefined
 
@@ -113,7 +115,7 @@ export function GhostStudioView() {
       <div className="border border-alvae-gold/20 bg-alvae-panel p-4">
         <canvas ref={canvasRef} width={720} height={160} className="h-40 w-full" />
         {lastAudioUrl !== null && (
-          <audio ref={audioRef} className="mt-4 w-full" controls src={lastAudioUrl} />
+          <AuthedAudio className="mt-4 w-full" src={lastAudioUrl} />
         )}
         <p className="mt-3 font-terminal text-[10px] text-alvae-muted">
           Fuente: {lastAudioPath ?? 'sin audio. Genera primero en La Terminal.'}
@@ -186,13 +188,18 @@ export function GhostStudioView() {
         >
           <p className="font-terminal text-xs uppercase tracking-[0.2em] text-alvae-gold">Stems</p>
           <p className="font-terminal text-[10px] text-alvae-muted">drums / bass / other</p>
-          <button type="submit" disabled={busy} className="border border-alvae-gold px-3 py-2 font-terminal text-[10px] uppercase tracking-[0.2em] text-alvae-gold">
+          {!stemsSupported && (
+            <p className="font-terminal text-[10px] text-amber-300">
+              Separación de stems no disponible con el motor activo ({capabilities.active_engine}).
+            </p>
+          )}
+          <button type="submit" disabled={busy || !stemsSupported} className="border border-alvae-gold px-3 py-2 font-terminal text-[10px] uppercase tracking-[0.2em] text-alvae-gold disabled:opacity-40">
             Separar
           </button>
           {lastJobId !== null && stems !== undefined && (
             <div className="space-y-2">
               {(['drums', 'bass', 'other'] as const).map((stem) => (
-                <audio key={stem} className="w-full" controls src={stemUrl(lastJobId, stem)} />
+                <AuthedAudio key={stem} className="w-full" src={stemUrl(lastJobId, stem)} />
               ))}
             </div>
           )}

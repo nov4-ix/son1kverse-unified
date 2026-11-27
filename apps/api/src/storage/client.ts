@@ -2,6 +2,7 @@
 
 import { PrismaClient } from '@son1k/db'
 import { config } from '../config/index.js'
+import { logger } from '../lib/logger.js'
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
 
@@ -15,7 +16,7 @@ if (config.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
 export async function connectDB(): Promise<void> {
   await prisma.$connect()
-  console.log('✓ Database connected')
+  logger.info('Database connected')
 }
 
 export async function disconnectDB(): Promise<void> {

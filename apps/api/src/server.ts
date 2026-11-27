@@ -3,10 +3,11 @@
 import { buildServer } from './api/server.js'
 import { connectDB, disconnectDB } from './storage/client.js'
 import { config } from './config/index.js'
+import { logger } from './lib/logger.js'
 
 async function main() {
-  console.log('\n⬡  SON1KVERSE — Creative Operating System')
-  console.log(`⬡  Versión: ${config.SYSTEM_VERSION} | Entorno: ${config.NODE_ENV}\n`)
+  logger.info('SON1KVERSE — Creative Operating System')
+  logger.info({ version: config.SYSTEM_VERSION, env: config.NODE_ENV }, 'Iniciando')
 
   await connectDB()
 
@@ -14,7 +15,7 @@ async function main() {
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
-    console.log(`\n⬡  Recibido ${signal}, apagando...`)
+    logger.info({ signal }, 'Señal recibida, apagando')
     await app.close()
     await disconnectDB()
     process.exit(0)
@@ -25,11 +26,10 @@ async function main() {
 
   try {
     await app.listen({ port: config.PORT, host: config.HOST })
-    console.log(`\n⬡  PIXEL online en http://${config.HOST}:${config.PORT}`)
-    console.log('⬡  Health: /health')
-    console.log('⬡  Orquestar: POST /api/v1/orchestrate\n')
+    logger.info({ host: config.HOST, port: config.PORT }, 'PIXEL online')
+    logger.info('Health: /health | Orquestar: POST /api/v1/orchestrate')
   } catch (err) {
-    console.error('❌  Error al iniciar:', err)
+    logger.error({ err }, 'Error al iniciar')
     process.exit(1)
   }
 }

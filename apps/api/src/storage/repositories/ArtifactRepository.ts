@@ -75,8 +75,8 @@ export class ArtifactRepository {
     })
   }
 
-  // Actualiza el contenido de un artifact (p. ej. cuando el Audio Engine
-  // termina y el estado pasa de 'queued' a 'done' con las rutas del WAV).
+  // Actualiza el contenido de un artifact (p. ej. cuando Music Lab termina
+  // y el estado pasa de 'queued' a 'done' con las rutas del WAV).
   async updateContent(id: string, content: Record<string, unknown> | string): Promise<void> {
     await prisma.artifact.update({
       where: { id },

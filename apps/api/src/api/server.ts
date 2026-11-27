@@ -4,13 +4,97 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import fjwt from '@fastify/jwt'
+import rateLimit from '@fastify/rate-limit'
 import { config } from '../config/index.js'
+import { errorResponse } from '../core/contracts.js'
+import { musicLabClient } from '../clients/musicLab.js'
+import { prisma } from '../storage/client.js'
 import { errorHandlerPlugin } from './plugins/error-handler.js'
 import { authRoutes } from './routes/auth.js'
 import { orchestrateRoutes } from './routes/orchestrate.js'
 import { profileRoutes } from './routes/profile.js'
 import { memoryRoutes } from './routes/memory.js'
 import { musicRoutes } from './routes/music.js'
+import { sessionRoutes } from './routes/sessions.js'
+
+const PUBLIC_API_PATHS = new Set([
+  '/api/v1/auth/register',
+  '/api/v1/auth/login',
+  '/api/v1/music/health',
+  '/api/v1/music/capabilities',
+])
+
+function corsOrigins(): string[] {
+  return config.CORS_ORIGINS
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
+}
+
+type DependencyCheck = {
+  status: 'ok' | 'error'
+  latencyMs: number
+  error?: string
+}
+
+const DEPENDENCY_TIMEOUT_MS = 2_000
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Timeout después de ${timeoutMs} ms`)), timeoutMs)
+        timer.unref?.()
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+async function checkPostgres(): Promise<DependencyCheck> {
+  const started = Date.now()
+  try {
+    await withTimeout(prisma.$queryRaw`SELECT 1`, DEPENDENCY_TIMEOUT_MS)
+    return { status: 'ok', latencyMs: Date.now() - started }
+  } catch (error) {
+    return {
+      status: 'error',
+      latencyMs: Date.now() - started,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+async function checkMusicLab(): Promise<DependencyCheck> {
+  const started = Date.now()
+  try {
+    const health = await withTimeout(musicLabClient.health(), DEPENDENCY_TIMEOUT_MS)
+    if (health.status !== 'ok') {
+      throw new Error(`Music Lab respondió con estado ${health.status}`)
+    }
+    return { status: 'ok', latencyMs: Date.now() - started }
+  } catch (error) {
+    return {
+      status: 'error',
+      latencyMs: Date.now() - started,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+async function dependencySnapshot(): Promise<{
+  ok: boolean
+  checks: { postgres: DependencyCheck; musicLab: DependencyCheck }
+}> {
+  const [postgres, musicLab] = await Promise.all([checkPostgres(), checkMusicLab()])
+  return {
+    ok: postgres.status === 'ok' && musicLab.status === 'ok',
+    checks: { postgres, musicLab },
+  }
+}
 
 export async function buildServer() {
   const app = Fastify({
@@ -23,49 +107,82 @@ export async function buildServer() {
   })
 
   // ─── Plugins ────────────────────────────────────────────────────────────────
-  await app.register(cors, {
-    origin: config.NODE_ENV === 'development' ? true : ['https://son1kverse.com'],
-  })
+  await app.register(cors, { origin: corsOrigins() })
   await app.register(helmet)
   await app.register(fjwt, {
     secret: config.JWT_SECRET,
   })
-  await app.register(errorHandlerPlugin)
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: '1 minute',
+    errorResponseBuilder: (request, context) => {
+      request.log.warn({ path: request.url }, '[rate-limit] solicitud limitada')
+      return errorResponse(
+        'RATE_LIMITED',
+        `Demasiadas solicitudes. Reintenta en ${context.after}.`,
+        { max: context.max, after: context.after },
+      )
+    },
+  })
+  // No usar app.register: setErrorHandler debe aplicar al scope raíz.
+  await errorHandlerPlugin(app)
 
-  // Auth: JWT obligatorio en /api/v1/audio/* (generate, status, download).
-  // - /audio/health es siempre público (monitorización / probes).
-  // - En desarrollo se permite acceder SIN token para no frenar el loop local
-  //   (e2e-audio.mjs). Si se envía token, se valida igualmente.
-  // - En producción NO hay bypass: todo /api/v1/audio/* exige Bearer válido.
-  const isDev = config.NODE_ENV === 'development'
+  // ─── Auth global ────────────────────────────────────────────────────────────
+  // Todo /api/v1/* exige JWT salvo register, login y el health del motor.
+  // /health (sin prefijo) queda público. ALLOW_ANON_DEV es un bypass explícito,
+  // solo local y nunca efectivo con NODE_ENV=production.
   app.addHook('preHandler', async (request, reply) => {
     const path = request.url.split('?')[0] ?? ''
-    if (!path.startsWith('/api/v1/audio')) return
-    if (path === '/api/v1/audio/health') return
+    if (!path.startsWith('/api/v1/')) return
+    if (PUBLIC_API_PATHS.has(path)) return
 
-    if (isDev && request.headers.authorization === undefined) {
-      request.log.warn({ path }, '[auth] Modo desarrollo: /api/v1/audio/* sin JWT')
+    const anonymousDev =
+      config.ALLOW_ANON_DEV &&
+      config.NODE_ENV !== 'production' &&
+      request.headers.authorization === undefined
+
+    if (anonymousDev) {
+      request.log.warn({ path }, '[auth] ALLOW_ANON_DEV activo: request sin JWT')
       return
     }
 
     try {
       await request.jwtVerify()
     } catch {
-      return reply.status(401).send({
-        success: false,
-        error:   'Unauthorized',
-        message: 'Bearer JWT requerido para /api/v1/audio/* (POST /api/v1/auth/login)',
-      })
+      return reply.status(401).send(
+        errorResponse(
+          'UNAUTHORIZED',
+          'Bearer JWT requerido. Inicia sesión en POST /api/v1/auth/login.',
+        ),
+      )
     }
   })
 
-  // ─── Health check ────────────────────────────────────────────────────────────
-  app.get('/health', async () => ({
-    status:  'ok',
-    version: config.SYSTEM_VERSION,
-    pixel:   'online',
-    ts:      new Date().toISOString(),
-  }))
+  // ─── Health / readiness ──────────────────────────────────────────────────────
+  // /health y /ready comprueban dependencias reales. Si Postgres o Music Lab
+  // fallan, responden 503 para que el orquestador no envíe tráfico.
+  app.get('/health', async (_request, reply) => {
+    const snapshot = await dependencySnapshot()
+    return reply.status(snapshot.ok ? 200 : 503).send({
+      status: snapshot.ok ? 'ok' : 'degraded',
+      version: config.SYSTEM_VERSION,
+      pixel: snapshot.ok ? 'online' : 'degraded',
+      ts: new Date().toISOString(),
+      checks: snapshot.checks,
+    })
+  })
+
+  app.get('/ready', async (_request, reply) => {
+    const snapshot = await dependencySnapshot()
+    return reply.status(snapshot.ok ? 200 : 503).send({
+      ready: snapshot.ok,
+      status: snapshot.ok ? 'ready' : 'not_ready',
+      version: config.SYSTEM_VERSION,
+      ts: new Date().toISOString(),
+      checks: snapshot.checks,
+    })
+  })
 
   // ─── API Routes ──────────────────────────────────────────────────────────────
   await app.register(authRoutes,        { prefix: '/api/v1' })
@@ -73,6 +190,7 @@ export async function buildServer() {
   await app.register(profileRoutes,     { prefix: '/api/v1' })
   await app.register(memoryRoutes,      { prefix: '/api/v1' })
   await app.register(musicRoutes,       { prefix: '/api/v1' })
+  await app.register(sessionRoutes,     { prefix: '/api/v1' })
 
   return app
 }

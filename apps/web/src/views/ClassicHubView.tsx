@@ -1,35 +1,41 @@
+import { SUBSCRIPTION_PLANS } from '@son1k/shared-types'
 import { AlvaeSymbol, LiteraryKnob, PlatformLogo } from '@son1k/shared-ui'
 import { useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { AuthedAudio } from '../components/AuthedAudio'
 import { useStudio } from '../context/StudioContext'
 import { useSystemMode } from '../context/SystemModeContext'
 import { orchestrateAandR } from '../lib/pixelAandR'
+import type { QualityPreset } from '../lib/api'
 
-const ARCHIVE = [
-  { title: 'Ecos del Futuro', artist: 'Sila424', plays: '2.4K', duration: '3:24' },
-  { title: 'Resonancia Digital', artist: 'CreadorX', plays: '1.8K', duration: '3:08' },
-  { title: 'Fragmentos de Luz', artist: 'SonidoIA', plays: '2.1K', duration: '3:42' },
-  { title: 'Imperfección Perfecta', artist: 'VanguardBeats', plays: '4.5K', duration: '3:55' },
-] as const
-
-const PLANS = [
-  { name: 'Free', price: '$0', period: '/mes', desc: 'Comienza tu viaje musical', features: ['3 generaciones/mes', 'Calidad estándar', 'Uso personal'], pro: false },
-  { name: 'Pro', price: '$29', period: '/mes', desc: 'Para creadores activos', features: ['100 generaciones/mes', 'Calidad alta', 'Uso comercial'], pro: false },
-  { name: 'Premium', price: '$69', period: '/mes', desc: 'Para profesionales', features: ['500 generaciones/mes', 'Descarga de stems', 'API incluida'], pro: true },
-  { name: 'Enterprise', price: 'Contacto', period: '', desc: 'Soluciones a medida', features: ['Ilimitado', 'API dedicada', 'Soporte 24/7'], pro: false },
-] as const
+const PLANS = SUBSCRIPTION_PLANS
+const PAID_TIERS = new Set(['STARTER', 'PRO', 'ENTERPRISE'])
 
 export function ClassicHubView() {
   const { user, logout } = useAuth()
   const { displayedProtocol, beginHold, endHold } = useSystemMode()
-  const { knobs, setKnob, generate, busy, error, lastAudioUrl, jobStatus, releases, setView, pixelSignal } = useStudio()
+  const { knobs, setKnob, generate, busy, error, lastAudioUrl, jobStatus, releases, generations, generationsLoading, refreshGenerations, setView, pixelSignal } = useStudio()
   const [prompt, setPrompt] = useState('')
   const [styleHint, setStyleHint] = useState('')
   const [isInstrumental, setIsInstrumental] = useState(false)
   const [isBoost, setIsBoost] = useState(false)
+  const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null)
   const [voiceType, setVoiceType] = useState<'male' | 'female' | null>(null)
   const [showKnobs, setShowKnobs] = useState(false)
   const [joined, setJoined] = useState(false)
+
+  const userTier = String((user as { tier?: string; alvaeCredential?: { tier?: string } } | null)?.alvaeCredential?.tier ?? (user as { tier?: string } | null)?.tier ?? 'FREE').toUpperCase()
+  const canUseXl = PAID_TIERS.has(userTier)
+  const selectedPreset: QualityPreset = isBoost && canUseXl ? 'xl_turbo' : 'turbo'
+
+  const handleToggleBoost = () => {
+    if (!isBoost && !canUseXl) {
+      setUpgradeNotice('XL Turbo requiere un plan de pago (STARTER, PRO o ENTERPRISE). Se mantendrá el preset 1.5 Turbo.')
+      return
+    }
+    setUpgradeNotice(null)
+    setIsBoost((prev) => !prev)
+  }
 
   const composed = useMemo(() => {
     const p = [prompt.trim() || 'Balada electrónica nocturna con sintetizadores analógicos']
@@ -37,13 +43,13 @@ export function ClassicHubView() {
     if (isInstrumental) p.push('[Instrumental]')
     else if (voiceType === 'male') p.push('[Voz Masculina]')
     else if (voiceType === 'female') p.push('[Voz Femenina]')
-    if (isBoost) p.push('[Boost HD]')
     return p.join(' · ')
-  }, [prompt, styleHint, isInstrumental, voiceType, isBoost])
+  }, [prompt, styleHint, isInstrumental, voiceType])
 
   const dir = useMemo(() => orchestrateAandR(composed, isInstrumental ? '' : prompt, knobs, releases.length), [composed, isInstrumental, prompt, knobs, releases.length])
   const min = Math.floor(dir.duration_s / 60)
   const sec = String(dir.duration_s % 60).padStart(2, '0')
+
   return (
     <div className="min-h-screen bg-[#0B0E14] text-zinc-100 pb-28">
       <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0B0E14]/90 backdrop-blur">
@@ -78,9 +84,18 @@ export function ClassicHubView() {
                 <button type="button" onClick={() => setIsInstrumental(!isInstrumental)} className={isInstrumental ? 'h-6 w-11 rounded-full bg-emerald-500' : 'h-6 w-11 rounded-full bg-zinc-700'}><span className={isInstrumental ? 'block h-4 w-4 rounded-full bg-white translate-x-6' : 'block h-4 w-4 rounded-full bg-white translate-x-1'} /></button>
               </div>
               <div className="flex items-center justify-between rounded-lg border border-white/10 bg-[#0B0E14]/80 px-4 py-3">
-                <div><div className="text-sm font-medium">Boost Mode <span className="rounded bg-purple-600/30 px-1.5 py-0.5 font-mono text-[10px] text-purple-300">FAST</span></div><div className="text-xs text-zinc-400">Prioridad y masterización LUFS</div></div>
-                <button type="button" onClick={() => setIsBoost(!isBoost)} className={isBoost ? 'h-6 w-11 rounded-full bg-purple-500' : 'h-6 w-11 rounded-full bg-zinc-700'}><span className={isBoost ? 'block h-4 w-4 rounded-full bg-white translate-x-6' : 'block h-4 w-4 rounded-full bg-white translate-x-1'} /></button>
+                <div>
+                  <div className="text-sm font-medium">Boost Mode <span className="rounded bg-purple-600/30 px-1.5 py-0.5 font-mono text-[10px] text-purple-300">{selectedPreset === 'xl_turbo' ? 'XL TURBO' : '1.5 TURBO'}</span></div>
+                  <div className="text-xs text-zinc-400">Preset {selectedPreset === 'xl_turbo' ? 'xl_turbo' : 'turbo'} · Masterización LUFS</div>
+                </div>
+                <button type="button" onClick={handleToggleBoost} className={isBoost && canUseXl ? 'h-6 w-11 rounded-full bg-purple-500' : 'h-6 w-11 rounded-full bg-zinc-700'}><span className={isBoost && canUseXl ? 'block h-4 w-4 rounded-full bg-white translate-x-6' : 'block h-4 w-4 rounded-full bg-white translate-x-1'} /></button>
               </div>
+              {upgradeNotice && (
+                <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-4 py-2.5 font-mono text-xs text-amber-300 flex items-center justify-between gap-3">
+                  <span>{upgradeNotice}</span>
+                  <a href="#planes" className="underline whitespace-nowrap text-amber-200">Ver planes</a>
+                </div>
+              )}
             </div>
             {!isInstrumental && (
               <div className="grid grid-cols-2 gap-3">
@@ -107,20 +122,53 @@ export function ClassicHubView() {
                 </div>
               )}
             </div>
-            <button type="button" disabled={busy} onClick={() => void generate({ prompt: composed, lyrics: isInstrumental ? '' : prompt })} className="w-full rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 py-4 font-bold text-sm text-zinc-950 disabled:opacity-40">{busy ? 'Sintetizando (' + jobStatus + ')...' : '✦ Generar Canción'}</button>
+            <button type="button" disabled={busy} onClick={() => void generate({ prompt: composed, lyrics: isInstrumental ? '' : prompt, qualityPreset: selectedPreset })} className="w-full rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 py-4 font-bold text-sm text-zinc-950 disabled:opacity-40">{busy ? 'Sintetizando (' + jobStatus + ')...' : '✦ Generar Canción'}</button>
             {error && <p className="text-center font-mono text-xs text-red-400">{error}</p>}
           </div>
         </section>
         <section id="archivo" className="space-y-6">
-          <h2 className="text-2xl font-bold text-white">El Archivo</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {ARCHIVE.map((item) => (
-              <div key={item.title} className="overflow-hidden rounded-xl border border-white/10 bg-[#121722]">
-                <div className="h-28 bg-gradient-to-br from-emerald-500/30 via-teal-600/20 to-slate-900" />
-                <div className="p-4"><div className="font-semibold text-white">{item.title}</div><div className="text-xs text-zinc-400">{item.artist} · {item.plays} · {item.duration}</div></div>
-              </div>
-            ))}
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-2xl font-bold text-white">El Archivo</h2>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => void refreshGenerations()} className="rounded-full border border-white/15 bg-white/5 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-zinc-300 hover:text-white">Actualizar</button>
+              <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-zinc-400">{generations.length > 0 ? `${generations.length} piezas` : 'Sin lanzamientos'}</span>
+            </div>
           </div>
+          {generationsLoading ? (
+            <div className="rounded-xl border border-white/10 bg-[#121722] px-6 py-10 text-center font-mono text-xs text-zinc-400">Cargando historial de generaciones...</div>
+          ) : generations.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-white/15 bg-[#121722] px-6 py-12 text-center space-y-3">
+              <p className="font-mono text-sm text-zinc-300">Todavía no hay lanzamientos en tu archivo.</p>
+              <p className="mx-auto max-w-lg font-mono text-[11px] text-zinc-500">Cuando generes una canción aparecerá aquí con su audio real. No mostramos piezas de ejemplo como si fueran tuyas.</p>
+              <button type="button" onClick={() => setView('generator')} className="rounded-lg border border-[#D4A359]/40 bg-[#D4A359]/10 px-4 py-2 font-mono text-xs text-[#D4A359]">Abrir el generador</button>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {generations.map((item) => {
+                const presetLabel = item.qualityPreset === 'xl_turbo' ? 'XL Turbo' : '1.5 Turbo'
+                const metaParts = [
+                  item.bpm ? `${item.bpm} BPM` : null,
+                  item.musicalKey ?? null,
+                  item.durationS ? `${item.durationS}s` : null,
+                  item.modelVersion ?? null,
+                ].filter(Boolean)
+                return (
+                  <div key={item.id} className="rounded-xl border border-white/10 bg-[#121722] p-5 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 font-mono text-[11px]">
+                        <span className="rounded bg-[#D4A359]/15 px-2 py-0.5 text-[#D4A359]">{presetLabel}</span>
+                        <span className="rounded bg-white/10 px-2 py-0.5 uppercase text-zinc-200">{item.status}</span>
+                      </div>
+                      <span className="font-mono text-[11px] text-zinc-500">{new Date(item.createdAt).toLocaleString()}</span>
+                    </div>
+                    <p className="text-sm text-zinc-100">{item.prompt}</p>
+                    {metaParts.length > 0 && <p className="font-mono text-[11px] text-zinc-400">{metaParts.join(' · ')}</p>}
+                    {item.audioUrl && <AuthedAudio src={item.audioUrl} className="h-9 w-full" />}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </section>
         <section className="rounded-2xl border border-emerald-500/30 bg-[#121722] p-8 text-center space-y-4">
           <span className="inline-block rounded-full bg-emerald-500/15 px-3 py-1 font-mono text-[11px] text-emerald-400">Próximamente</span>
@@ -140,14 +188,14 @@ export function ClassicHubView() {
           <h2 className="text-2xl font-bold text-center text-white">Elige tu plan</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {PLANS.map((plan) => (
-              <div key={plan.name} className={plan.pro ? 'rounded-xl border border-purple-500 bg-[#161B29] p-6 flex flex-col justify-between' : 'rounded-xl border border-white/10 bg-[#121722] p-6 flex flex-col justify-between'}>
+              <div key={plan.tier} className={plan.highlighted ? 'rounded-xl border border-purple-500 bg-[#161B29] p-6 flex flex-col justify-between' : 'rounded-xl border border-white/10 bg-[#121722] p-6 flex flex-col justify-between'}>
                 <div className="space-y-2">
                   <div className="font-bold text-white">{plan.name}</div>
-                  <div className="text-2xl font-bold text-white">{plan.price}<span className="text-xs font-normal text-zinc-400">{plan.period}</span></div>
-                  <p className="text-xs text-zinc-400">{plan.desc}</p>
+                  <div className="text-2xl font-bold text-white">{plan.priceLabel}<span className="text-xs font-normal text-zinc-400">{plan.period}</span></div>
+                  <p className="text-xs text-zinc-400">{plan.description}</p>
                   <ul className="space-y-1 pt-2 text-xs text-zinc-300">{plan.features.map((f) => <li key={f}>✓ {f}</li>)}</ul>
                 </div>
-                <button type="button" className={plan.pro ? 'mt-6 w-full rounded-lg bg-purple-600 py-2.5 text-xs font-semibold text-white' : 'mt-6 w-full rounded-lg bg-white/10 py-2.5 text-xs font-semibold text-white'}>Comenzar ahora</button>
+                <button type="button" className={plan.highlighted ? 'mt-6 w-full rounded-lg bg-purple-600 py-2.5 text-xs font-semibold text-white' : 'mt-6 w-full rounded-lg bg-white/10 py-2.5 text-xs font-semibold text-white'}>Comenzar ahora</button>
               </div>
             ))}
           </div>
@@ -156,7 +204,7 @@ export function ClassicHubView() {
       </main>
       {lastAudioUrl && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#D4A359]/40 bg-[#0B0E14]/95 px-6 py-3 backdrop-blur">
-          <div className="mx-auto flex max-w-5xl items-center gap-4"><span className="font-mono text-xs text-[#D4A359]">MASTER ({min}:{sec})</span><audio controls src={lastAudioUrl} className="h-9 flex-1" /></div>
+          <div className="mx-auto flex max-w-5xl items-center gap-4"><span className="font-mono text-xs text-[#D4A359]">MASTER ({min}:{sec})</span><AuthedAudio src={lastAudioUrl} className="h-9 flex-1" /></div>
         </div>
       )}
     </div>

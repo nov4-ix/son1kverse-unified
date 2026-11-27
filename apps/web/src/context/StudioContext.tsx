@@ -1,23 +1,64 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
-import { api, isGenerationResult, jobAudioUrl, type JobStatus, type MusicJob } from '../lib/api'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  api,
+  ApiError,
+  isGenerationResult,
+  jobAudioUrl,
+  type GenerationHistoryItem,
+  type JobStatus,
+  type MusicCapabilities,
+  type MusicJob,
+  type QualityPreset,
+} from '../lib/api'
+import { useAuth } from './AuthContext'
 import { orchestrateAandR } from '../lib/pixelAandR'
-import { composeLiteraryPrompt, DEFAULT_KNOBS, knobsToStyleTags, signalForJob, signalForKnobs, type LiteraryKnobs } from '../lib/pixelPersonality'
+import {
+  composeLiteraryPrompt,
+  DEFAULT_KNOBS,
+  knobsToStyleTags,
+  signalForJob,
+  signalForKnobs,
+  type LiteraryKnobs,
+} from '@son1k/shared-types'
 
 export type ConsoleView = 'generator' | 'ghost' | 'nova'
 export type ReleaseDraft = { id: string; title: string; caption: string; jobId: string; audioUrl: string; createdAt: string }
 
+const DEFAULT_CAPABILITIES: MusicCapabilities = {
+  active_engine: 'simulation',
+  methods: ['generate', 'repaint', 'cover', 'stems'],
+  supports_stems: true,
+  active_methods: ['generate', 'repaint', 'cover', 'stems'],
+}
+
 type StudioContextValue = {
-  view: ConsoleView; setView: (v: ConsoleView) => void; knobs: LiteraryKnobs; setKnob: (k: keyof LiteraryKnobs, v: number) => void
-  pixelSignal: string; job: MusicJob | null; jobStatus: JobStatus | 'idle'; lastAudioPath: string | null; lastJobId: string | null
-  lastAudioUrl: string | null; busy: boolean; error: string | null; releases: ReleaseDraft[]
-  generate: (input: { prompt: string; lyrics: string }) => Promise<void>
-  repaint: (input: { prompt: string; start_s: number; end_s: number }) => Promise<void>
-  cover: (input: { prompt: string }) => Promise<void>
+  view: ConsoleView
+  setView: (v: ConsoleView) => void
+  knobs: LiteraryKnobs
+  setKnob: (k: keyof LiteraryKnobs, v: number) => void
+  pixelSignal: string
+  job: MusicJob | null
+  jobStatus: JobStatus | 'idle'
+  lastAudioPath: string | null
+  lastGenerationId: string | null
+  lastJobId: string | null
+  lastAudioUrl: string | null
+  busy: boolean
+  error: string | null
+  releases: ReleaseDraft[]
+  capabilities: MusicCapabilities
+  generations: GenerationHistoryItem[]
+  generationsLoading: boolean
+  refreshGenerations: () => Promise<void>
+  generate: (input: { prompt: string; lyrics: string; qualityPreset?: QualityPreset }) => Promise<void>
+  repaint: (input: { prompt: string; start_s: number; end_s: number; qualityPreset?: QualityPreset }) => Promise<void>
+  cover: (input: { prompt: string; qualityPreset?: QualityPreset }) => Promise<void>
   splitStems: (input: { prompt: string }) => Promise<void>
   addRelease: (title: string, caption: string) => void
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null)
+
 export function StudioProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<ConsoleView>('generator')
   const [knobs, setKnobs] = useState<LiteraryKnobs>(DEFAULT_KNOBS)
@@ -25,10 +66,49 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [job, setJob] = useState<MusicJob | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | 'idle'>('idle')
   const [lastAudioPath, setLastAudioPath] = useState<string | null>(null)
+  const [lastGenerationId, setLastGenerationId] = useState<string | null>(null)
   const [lastJobId, setLastJobId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [releases, setReleases] = useState<ReleaseDraft[]>([])
+  const [capabilities, setCapabilities] = useState<MusicCapabilities>(DEFAULT_CAPABILITIES)
+  const [generations, setGenerations] = useState<GenerationHistoryItem[]>([])
+  const [generationsLoading, setGenerationsLoading] = useState(false)
+  const { token, logout } = useAuth()
+
+  const refreshGenerations = useCallback(async () => {
+    if (!token) {
+      setGenerations([])
+      return
+    }
+    setGenerationsLoading(true)
+    try {
+      const page = await api.listGenerations({ limit: 20, offset: 0 }, token)
+      setGenerations(page.items)
+    } catch {
+      // mantiene el estado actual si falla temporalmente
+    } finally {
+      setGenerationsLoading(false)
+    }
+  }, [token])
+
+  useEffect(() => {
+    let active = true
+    void api.getMusicCapabilities()
+      .then((caps) => {
+        if (active) setCapabilities(caps)
+      })
+      .catch(() => {
+        if (active) setCapabilities(DEFAULT_CAPABILITIES)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshGenerations()
+  }, [refreshGenerations])
 
   const setKnob = useCallback((key: keyof LiteraryKnobs, value: number) => {
     setKnobs((curr) => {
@@ -38,12 +118,13 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const runJob = useCallback(async (start: () => Promise<{ job_id: string }>, arBanner?: string) => {
+  const runJob = useCallback(async (start: () => Promise<{ job_id: string; generation_id?: string }>, arBanner?: string) => {
     setBusy(true); setError(null); setJobStatus('queued'); setPixelSignal(arBanner ?? signalForJob('queued'))
     try {
       const accepted = await start()
       setLastJobId(accepted.job_id)
-      const finished = await api.pollJob(accepted.job_id, (tick) => {
+      setLastGenerationId(accepted.generation_id ?? null)
+      const finished = await api.pollJob(accepted.job_id, token, (tick) => {
         setJob(tick); setJobStatus(tick.status)
         if (tick.status !== 'queued') setPixelSignal(signalForJob(tick.status))
       })
@@ -51,12 +132,22 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       if (finished.status === 'failed') { setError(finished.error?.message ?? 'Job fallido'); return }
       if (isGenerationResult(finished.result)) { setLastAudioPath(finished.result.audio_path); setLastJobId(finished.job_id) }
       setPixelSignal(signalForJob(finished.status))
+      void refreshGenerations()
     } catch (cause) {
-      setJobStatus('failed'); setError(cause instanceof Error ? cause.message : 'Error de red'); setPixelSignal(signalForJob('failed'))
+      setJobStatus('failed')
+      if (cause instanceof ApiError && cause.status === 401) {
+        logout()
+        setError('Sesión vencida. Entra de nuevo y seguimos donde quedamos.')
+      } else if (cause instanceof ApiError && (cause.status === 429 || cause.code === 'QUOTA_EXCEEDED')) {
+        setError('Cuota agotada. Ni una nota más este mes: cambia de plan o espera el reset.')
+      } else {
+        setError(cause instanceof Error ? cause.message : 'Error de red')
+      }
+      setPixelSignal(signalForJob('failed'))
     } finally { setBusy(false) }
-  }, [])
+  }, [logout, refreshGenerations, token])
 
-  const generate = useCallback(async (input: { prompt: string; lyrics: string }) => {
+  const generate = useCallback(async (input: { prompt: string; lyrics: string; qualityPreset?: QualityPreset }) => {
     const dir = orchestrateAandR(input.prompt, input.lyrics, knobs, releases.length)
     await runJob(() => api.generate({
       prompt: composeLiteraryPrompt(input.prompt, knobs),
@@ -66,22 +157,38 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       key: dir.key,
       style_tags: dir.styleTags,
       output_format: 'wav',
-    }), dir.arNote)
-  }, [knobs, releases.length, runJob])
+      master: true,
+      quality_preset: input.qualityPreset ?? 'turbo',
+    }, token), dir.arNote)
+  }, [knobs, releases.length, runJob, token])
 
-  const repaint = useCallback(async (i: { prompt: string; start_s: number; end_s: number }) => {
-    if (!lastAudioPath) { setError('Necesitas un audio fuente desde La Terminal'); return }
-    await runJob(() => api.repaint({ prompt: i.prompt, source_audio_path: lastAudioPath, start_s: i.start_s, end_s: i.end_s, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }))
-  }, [knobs, lastAudioPath, runJob])
+  const repaint = useCallback(async (i: { prompt: string; start_s: number; end_s: number; qualityPreset?: QualityPreset }) => {
+    if (!lastGenerationId) { setError('Necesitas un audio fuente desde La Terminal'); return }
+    await runJob(() => api.repaint({
+      prompt: i.prompt,
+      source_generation_id: lastGenerationId,
+      start_s: i.start_s,
+      end_s: i.end_s,
+      style_tags: knobsToStyleTags(knobs),
+      output_format: 'wav',
+      quality_preset: i.qualityPreset ?? 'turbo',
+    }, token))
+  }, [knobs, lastGenerationId, runJob, token])
 
-  const cover = useCallback(async (i: { prompt: string }) => {
-    if (!lastAudioPath) { setError('Necesitas un audio fuente desde La Terminal'); return }
-    await runJob(() => api.cover({ prompt: i.prompt, source_audio_path: lastAudioPath, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }))
-  }, [knobs, lastAudioPath, runJob])
+  const cover = useCallback(async (i: { prompt: string; qualityPreset?: QualityPreset }) => {
+    if (!lastGenerationId) { setError('Necesitas un audio fuente desde La Terminal'); return }
+    await runJob(() => api.cover({
+      prompt: i.prompt,
+      source_generation_id: lastGenerationId,
+      style_tags: knobsToStyleTags(knobs),
+      output_format: 'wav',
+      quality_preset: i.qualityPreset ?? 'turbo',
+    }, token))
+  }, [knobs, lastGenerationId, runJob, token])
 
   const splitStems = useCallback(async (i: { prompt: string }) => {
-    await runJob(() => api.stems({ prompt: i.prompt, source_audio_path: lastAudioPath, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }))
-  }, [knobs, lastAudioPath, runJob])
+    await runJob(() => api.stems({ prompt: i.prompt, source_generation_id: lastGenerationId, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }, token))
+  }, [knobs, lastGenerationId, runJob, token])
 
   const addRelease = useCallback((title: string, caption: string) => {
     if (!lastJobId) return
@@ -89,7 +196,34 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   }, [lastJobId])
 
   const lastAudioUrl = lastJobId ? jobAudioUrl(lastJobId) : null
-  const value = useMemo(() => ({ view, setView, knobs, setKnob, pixelSignal, job, jobStatus, lastAudioPath, lastJobId, lastAudioUrl, busy, error, releases, generate, repaint, cover, splitStems, addRelease }), [addRelease, busy, cover, error, generate, job, jobStatus, knobs, lastAudioPath, lastAudioUrl, lastJobId, pixelSignal, releases, repaint, setKnob, splitStems, view])
+  const value = useMemo(
+    () => ({
+      view,
+      setView,
+      knobs,
+      setKnob,
+      pixelSignal,
+      job,
+      jobStatus,
+      lastAudioPath,
+      lastGenerationId,
+      lastJobId,
+      lastAudioUrl,
+      busy,
+      error,
+      releases,
+      capabilities,
+      generations,
+      generationsLoading,
+      refreshGenerations,
+      generate,
+      repaint,
+      cover,
+      splitStems,
+      addRelease,
+    }),
+    [addRelease, busy, capabilities, cover, error, generate, generations, generationsLoading, job, jobStatus, knobs, lastAudioPath, lastAudioUrl, lastGenerationId, lastJobId, pixelSignal, refreshGenerations, releases, repaint, setKnob, splitStems, view],
+  )
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>
 }
 

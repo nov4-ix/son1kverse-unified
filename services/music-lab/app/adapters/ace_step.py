@@ -22,9 +22,11 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 import os
 import re
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -32,7 +34,7 @@ from typing import Any
 import numpy as np
 
 from app.adapters.base import AudioGeneratorInterface
-from app.adapters.runtime import cuda_available, module_available, wants_cuda
+from app.adapters.runtime import cuda_available, gpu_info, module_available, wants_cuda
 from app.audio import (
     ensure_stereo,
     read_audio,
@@ -40,7 +42,7 @@ from app.audio import (
     resolve_output_file,
     write_audio,
 )
-from app.config import Settings, get_settings
+from app.config import Settings, get_quality_preset, get_settings
 from app.errors import (
     EngineUnavailableError,
     InvalidRequestError,
@@ -63,6 +65,9 @@ _DURATION_MIN_S = 10.0
 _DURATION_MAX_S = 600.0
 _CAPTION_MAX_CHARS = 512
 _KEY_RE = re.compile(r"^\s*([A-Ga-g])([#b♭]?)\s*(.*?)\s*$")
+_DTYPE_CUDA_BFLOAT16_SUPPORT = {"bfloat16": True, "float16": False}
+
+logger = logging.getLogger(__name__)
 
 
 def format_keyscale(key: str) -> str:
@@ -91,6 +96,7 @@ class AceStepAdapter(AudioGeneratorInterface):
         self._llm_handler: Any | None = None
         self._inference: Any | None = None
         self._loaded = False
+        self._effective_dtype: str | None = None
 
     @property
     def _checkpoints_dir(self) -> Path:
@@ -121,6 +127,41 @@ class AceStepAdapter(AudioGeneratorInterface):
             reasons.append(f"CUDA requested via ACE_STEP_DEVICE={self._settings.ace_step_device}")
         return reasons
 
+    def _apply_dtype_policy(self) -> str | None:
+        """Force the CUDA dtype support probe before ACE-Step initializes.
+
+        Upstream picks ``float16`` on pre-Ampere GPUs (e.g. T4), which produces
+        NaN latents in real generations. ``ACE_STEP_DTYPE=bfloat16`` overrides
+        both probe copies so the engine loads and decodes in bfloat16.
+        """
+        dtype = self._settings.ace_step_dtype
+        on_cuda = wants_cuda(self._settings.ace_step_device) or (
+            self._settings.ace_step_device.strip().lower() == "auto" and cuda_available()
+        )
+        if not on_cuda:
+            return None
+        if dtype not in _DTYPE_CUDA_BFLOAT16_SUPPORT:
+            logger.warning(
+                "[ace_step] dtype %s no esta soportado por ACE-Step en CUDA; "
+                "se usara la seleccion nativa del motor",
+                dtype,
+            )
+            return None
+
+        supported = _DTYPE_CUDA_BFLOAT16_SUPPORT[dtype]
+        gpu_config = importlib.import_module("acestep.gpu_config")
+        memory_utils = importlib.import_module(
+            "acestep.core.generation.handler.memory_utils"
+        )
+
+        def _forced(*_args: Any, **_kwargs: Any) -> bool:
+            return supported
+
+        gpu_config.cuda_supports_bfloat16 = _forced
+        memory_utils.cuda_supports_bfloat16 = _forced
+        logger.info("[ace_step] dtype forzado: %s", dtype)
+        return dtype
+
     async def health(self) -> AdapterHealth:
         reasons = self._health_reasons()
         return AdapterHealth(
@@ -135,7 +176,10 @@ class AceStepAdapter(AudioGeneratorInterface):
                 "auto_download": self._settings.ace_step_auto_download,
                 "use_lm": self._settings.ace_step_use_lm,
                 "dtype": self._settings.ace_step_dtype,
+                "effective_dtype": self._effective_dtype,
+                "quantization": self._settings.ace_step_quantization,
                 "offload": self._settings.ace_step_offload,
+                "gpu": gpu_info(),
                 "loaded": self._loaded,
             },
         )
@@ -161,15 +205,19 @@ class AceStepAdapter(AudioGeneratorInterface):
         handler_module = importlib.import_module("acestep.handler")
         inference_module = importlib.import_module("acestep.inference")
 
+        self._apply_dtype_policy()
         dit_handler = handler_module.AceStepHandler()
-        status, ok = dit_handler.initialize_service(
-            project_root=str(self._checkpoints_dir),
-            config_path=self._settings.ace_step_config_path,
-            device=self._settings.ace_step_device,
-            offload_to_cpu=self._settings.ace_step_offload,
-            offload_dit_to_cpu=self._settings.ace_step_offload,
-            prefer_source=self._settings.ace_step_download_source,
-        )
+        initialize_kwargs: dict[str, Any] = {
+            "project_root": str(self._checkpoints_dir),
+            "config_path": self._settings.ace_step_config_path,
+            "device": self._settings.ace_step_device,
+            "offload_to_cpu": self._settings.ace_step_offload,
+            "offload_dit_to_cpu": self._settings.ace_step_offload,
+            "prefer_source": self._settings.ace_step_download_source,
+        }
+        if self._settings.ace_step_quantization is not None:
+            initialize_kwargs["quantization"] = self._settings.ace_step_quantization
+        status, ok = dit_handler.initialize_service(**initialize_kwargs)
         if not ok:
             raise EngineUnavailableError(
                 "ACE-Step initialization failed",
@@ -179,6 +227,10 @@ class AceStepAdapter(AudioGeneratorInterface):
                     "config_path": self._settings.ace_step_config_path,
                 },
             )
+        actual_dtype = getattr(dit_handler, "dtype", None)
+        self._effective_dtype = (
+            str(actual_dtype).removeprefix("torch.") if actual_dtype is not None else None
+        )
 
         llm_handler = None
         if self._settings.ace_step_use_lm:
@@ -210,6 +262,14 @@ class AceStepAdapter(AudioGeneratorInterface):
             caption = f"{caption}; styles: {', '.join(tags)}"
         return caption[:_CAPTION_MAX_CHARS].rstrip()
 
+    def _quality_preset(self, req: GenerationParams) -> Any | None:
+        if req.quality_preset is None:
+            return None
+        try:
+            return get_quality_preset(req.quality_preset)
+        except KeyError as exc:
+            raise InvalidRequestError(str(exc)) from exc
+
     def _build_params(
         self,
         operation: str,
@@ -219,7 +279,18 @@ class AceStepAdapter(AudioGeneratorInterface):
         if self._inference is None:
             raise JobExecutionError("ACE-Step pipeline is not loaded")
         inference = self._inference
-        use_lm = self._settings.ace_step_use_lm
+        preset = self._quality_preset(req)
+        use_lm = preset.use_lm if preset is not None else self._settings.ace_step_use_lm
+        inference_steps = (
+            preset.inference_steps
+            if preset is not None
+            else self._settings.ace_step_inference_steps
+        )
+        guidance_scale = (
+            preset.guidance_scale
+            if preset is not None
+            else self._settings.ace_step_guidance_scale
+        )
         lyrics = (req.lyrics or "").strip()
         instrumental = not lyrics or lyrics.lower() == "[instrumental]"
         if not lyrics:
@@ -241,8 +312,8 @@ class AceStepAdapter(AudioGeneratorInterface):
             keyscale=format_keyscale(req.key),
             duration=-1.0 if source_path is not None else duration,
             seed=int(req.seed),
-            inference_steps=self._settings.ace_step_inference_steps,
-            guidance_scale=self._settings.ace_step_guidance_scale,
+            inference_steps=inference_steps,
+            guidance_scale=guidance_scale,
             shift=self._settings.ace_step_shift,
             thinking=use_lm,
             use_cot_metas=use_lm,
@@ -262,6 +333,25 @@ class AceStepAdapter(AudioGeneratorInterface):
             seeds=[int(req.seed)],
             audio_format="wav",
         )
+
+    @staticmethod
+    def _phase_times(result: Any) -> dict[str, float | None]:
+        extra = getattr(result, "extra_outputs", None) or {}
+        costs = extra.get("time_costs") if isinstance(extra, dict) else None
+        if not isinstance(costs, dict):
+            costs = {}
+
+        def _read(key: str) -> float | None:
+            try:
+                return round(float(costs[key]), 3)
+            except (KeyError, TypeError, ValueError):
+                return None
+
+        return {
+            "diffusion": _read("dit_diffusion_time_cost"),
+            "decode": _read("dit_vae_decode_time_cost"),
+            "lm": _read("lm_total_time"),
+        }
 
     def _run_inference(
         self,
@@ -291,6 +381,12 @@ class AceStepAdapter(AudioGeneratorInterface):
 
         raw_dir = output_path.parent / "ace-step-raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
+        use_cuda = wants_cuda(self._settings.ace_step_device) and cuda_available()
+        torch = importlib.import_module("torch") if use_cuda else None
+        if torch is not None:
+            torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
+        started_at = time.perf_counter()
         try:
             result = self._inference.generate_music(
                 self._dit_handler,
@@ -337,9 +433,22 @@ class AceStepAdapter(AudioGeneratorInterface):
         finally:
             shutil.rmtree(raw_dir, ignore_errors=True)
 
+        if torch is not None:
+            torch.cuda.synchronize()
+            peak_vram_bytes = int(torch.cuda.max_memory_reserved())
+        else:
+            peak_vram_bytes = 0
+        inference_seconds = round(time.perf_counter() - started_at, 3)
+
         audio_params = audio.get("params") or {}
+        phase_seconds = self._phase_times(result)
+        gpu_seconds_by_phase = {
+            phase: seconds if torch is not None else None
+            for phase, seconds in phase_seconds.items()
+        }
         metadata = {
             "model": self._settings.ace_step_config_path,
+            "quality_preset": req.quality_preset,
             "pipeline": "acestep.inference.generate_music",
             "task_type": params.task_type,
             "operation": operation,
@@ -347,13 +456,24 @@ class AceStepAdapter(AudioGeneratorInterface):
             "keyscale": params.keyscale,
             "bpm": params.bpm,
             "seed": audio_params.get("seed", req.seed),
+            "dtype": self._effective_dtype or self._settings.ace_step_dtype,
             "vocal_language": params.vocal_language,
             "thinking": params.thinking,
             "inference_steps": params.inference_steps,
+            "steps": params.inference_steps,
+            "guidance": params.guidance_scale,
             "shift": params.shift,
             "native_sample_rate": native_sr,
             "output_sample_rate": self._settings.music_lab_sample_rate,
             "requested_duration_s": req.duration_s,
+            "compute": {
+                "device": self._settings.ace_step_device,
+                "inference_seconds": inference_seconds,
+                "gpu_seconds": inference_seconds if torch is not None else None,
+                "peak_vram_bytes": peak_vram_bytes if torch is not None else None,
+                "phase_seconds": phase_seconds,
+                "gpu_seconds_by_phase": gpu_seconds_by_phase,
+            },
         }
         if operation == "repaint":
             metadata["repainting_start"] = params.repainting_start

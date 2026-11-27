@@ -1,23 +1,52 @@
 // ─── SON1KVERSE — Orchestrate Route ──────────────────────────────────────────
 
+import { promises as fs } from 'node:fs'
+import * as path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { OrchestrationRequestSchema, FeedbackSchema, successResponse } from '../../core/contracts.js'
-import { ValidationError } from '../../core/errors.js'
+import {
+  CoherentOrchestrationSchema,
+  FeedbackSchema,
+  OrchestrationRequestSchema,
+  successResponse,
+} from '../../core/contracts.js'
+import {
+  ForbiddenError,
+  NotFoundError,
+  SessionNotActiveError,
+  SessionNotFoundError,
+  ValidationError,
+} from '../../core/errors.js'
+import { SessionStatus } from '../../core/types.js'
 import { Pixel } from '../../orchestration/Pixel.js'
+import { prisma } from '../../storage/client.js'
+import { SessionService } from '../../sessions/SessionService.js'
+import { getAuthUserId } from '../request-auth.js'
 
 const pixel = new Pixel()
+const sessions = new SessionService()
 
-// ─── Almacenamiento en memoria para jobs de canción coherente ───
-interface CoherentJob {
-  trackId: string
-  status: 'queued' | 'processing' | 'done' | 'error'
-  downloadUrl?: string
-  error?: string
-  fragments?: number
-  createdAt: Date
+async function assertProfileOwner(profileId: string, userId: string): Promise<void> {
+  const profile = await prisma.artistProfile.findUnique({
+    where: { id: profileId },
+    select: { userId: true },
+  })
+  if (profile === null) throw new NotFoundError('Perfil no encontrado')
+  if (profile.userId !== userId) throw new ForbiddenError()
 }
 
-const coherentJobStore = new Map<string, CoherentJob>()
+async function assertSessionUsable(
+  sessionId: string,
+  profileId: string,
+  userId: string,
+): Promise<void> {
+  const session = await sessions.getSession(sessionId)
+  if (session === null) throw new SessionNotFoundError(sessionId)
+  if (session.userId !== userId) throw new ForbiddenError()
+  if (session.profileId !== profileId) {
+    throw new ValidationError({ sessionId: ['La sesión no pertenece al perfil indicado'] })
+  }
+  if (session.status !== SessionStatus.ACTIVE) throw new SessionNotActiveError(sessionId)
+}
 
 export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
   // POST /api/v1/orchestrate — el flujo principal de Pixel
@@ -25,86 +54,73 @@ export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
     const parsed = OrchestrationRequestSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
 
+    const userId = getAuthUserId(req)
+    await assertProfileOwner(parsed.data.profileId, userId)
+    await assertSessionUsable(parsed.data.sessionId, parsed.data.profileId, userId)
+
     const result = await pixel.orchestrate(parsed.data)
     return reply.status(200).send(successResponse(result))
   })
 
-  // POST /api/v1/orchestrate-coherent — canción completa por bloques coherentes (ASÍNCRONO)
-  // Devuelve 202 inmediatamente con trackId. El cliente debe hacer polling en
-  // GET /api/v1/coherent-status/:trackId hasta que status === 'done'.
+  // POST /api/v1/orchestrate-coherent — canción completa en una sola llamada
+  // single-shot a Music Lab con la letra estructurada y los style tags de Pixel.
   app.post('/orchestrate-coherent', async (req, reply) => {
-    const parsed = OrchestrationRequestSchema.safeParse(req.body)
+    const parsed = CoherentOrchestrationSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
 
-    const { prompt, lyrics, profileId, sessionId, options } = parsed.data
-    const trackId = `coherent_${Date.now().toString(36)}`
+    const userId = getAuthUserId(req)
+    await assertProfileOwner(parsed.data.profileId, userId)
+    await assertSessionUsable(parsed.data.sessionId, parsed.data.profileId, userId)
 
-    // Registrar job como queued
-    coherentJobStore.set(trackId, {
-      trackId,
-      status: 'queued',
-      createdAt: new Date(),
-    })
-
-    // Lanzar en background (no bloquear HTTP)
-    void (async () => {
-      try {
-        coherentJobStore.get(trackId)!.status = 'processing'
-
-        const result = await pixel.orchestrateCoherentSong({
-          prompt,
-          lyrics,
-          profileId,
-          sessionId,
-          options,
-          externalTrackId: trackId,
-        })
-
-        const content = typeof result.content === 'object' && result.content !== null
-          ? result.content
-          : {}
-        coherentJobStore.get(trackId)!.status = 'done'
-        coherentJobStore.get(trackId)!.downloadUrl = typeof content.download_url === 'string'
-          ? content.download_url
-          : `/api/v1/audio/download/${encodeURIComponent(trackId)}`
-        coherentJobStore.get(trackId)!.fragments = typeof content.fragments === 'number'
-          ? content.fragments
-          : undefined
-      } catch (err) {
-        coherentJobStore.get(trackId)!.status = 'error'
-        coherentJobStore.get(trackId)!.error = err instanceof Error ? err.message : String(err)
-        console.error(`[Coherent] Job ${trackId} falló:`, err)
-      }
-    })()
-
-    return reply.status(202).send(successResponse({
-      trackId,
-      status: 'queued',
-      statusUrl: `/api/v1/coherent-status/${encodeURIComponent(trackId)}`,
-      downloadUrl: `/api/v1/audio/download/${encodeURIComponent(trackId)}`,
-    }))
+    const result = await pixel.orchestrateCoherentSong(parsed.data)
+    return reply.status(200).send(successResponse(result))
   })
 
-  // GET /api/v1/coherent-status/:trackId — estado de la canción coherente
-  app.get('/coherent-status/:trackId', async (req, reply) => {
-    const { trackId } = req.params as { trackId: string }
-    if (!trackId) throw new ValidationError({ trackId: ['trackId es requerido'] })
+  // GET /api/v1/artifacts/:artifactId/audio — descarga autenticada del WAV
+  // generado por Pixel. Verifica propiedad del perfil y que la ruta esté
+  // confinada a output/tracks/ (sin traversal).
+  app.get('/artifacts/:artifactId/audio', async (req, reply) => {
+    const { artifactId } = req.params as { artifactId: string }
+    if (!artifactId) throw new ValidationError({ artifactId: ['artifactId es requerido'] })
 
-    const job = coherentJobStore.get(trackId)
-    if (!job) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'NOT_FOUND', message: 'Coherent job no encontrado' },
-      })
+    const artifact = await prisma.artifact.findUnique({
+      where: { id: artifactId },
+      select: {
+        content: true,
+        profile: { select: { userId: true } },
+      },
+    })
+    if (artifact === null) throw new NotFoundError('Artifact no encontrado')
+    if (artifact.profile.userId !== getAuthUserId(req)) throw new ForbiddenError()
+
+    let content: unknown = null
+    try {
+      content = JSON.parse(artifact.content) as unknown
+    } catch {
+      content = null
+    }
+    const localWav = typeof content === 'object' && content !== null && 'local_wav' in content
+      ? (content as Record<string, unknown>)['local_wav']
+      : null
+    if (typeof localWav !== 'string') throw new NotFoundError('Audio no disponible todavía')
+
+    const tracksDir = path.resolve(process.cwd(), 'output', 'tracks')
+    const file = path.resolve(localWav)
+    if (file !== tracksDir && !file.startsWith(`${tracksDir}${path.sep}`)) {
+      throw new ForbiddenError('Ruta de audio no permitida')
     }
 
-    return reply.status(200).send(successResponse({
-      trackId: job.trackId,
-      status: job.status,
-      downloadUrl: job.downloadUrl,
-      error: job.error,
-      fragments: job.fragments,
-    }))
+    const stat = await fs.stat(file).catch(() => null)
+    if (stat === null || !stat.isFile()) throw new NotFoundError('Audio no disponible todavía')
+
+    const buffer = await fs.readFile(file)
+    const contentType = path.extname(file).toLowerCase() === '.mp3' ? 'audio/mpeg' : 'audio/wav'
+    return reply
+      .header('content-type', contentType)
+      .header('content-length', String(buffer.byteLength))
+      .header('content-disposition', `attachment; filename="${path.basename(file).replace(/["\r\n]/g, '')}"`)
+      .header('cache-control', 'private, max-age=0, no-store')
+      .send(buffer)
   })
 
   // POST /api/v1/feedback — feedback del artista sobre un resultado
@@ -112,92 +128,15 @@ export async function orchestrateRoutes(app: FastifyInstance): Promise<void> {
     const parsed = FeedbackSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
 
+    const userId = getAuthUserId(req)
+    const artifact = await prisma.artifact.findUnique({
+      where: { id: parsed.data.artifactId },
+      select: { profile: { select: { userId: true } } },
+    })
+    if (artifact === null) throw new NotFoundError('Artifact no encontrado')
+    if (artifact.profile.userId !== userId) throw new ForbiddenError()
+
     await pixel.processFeedback(parsed.data)
     return reply.status(200).send(successResponse({ ok: true }))
-  })
-
-  // ─── Rutas del Audio Engine (Python / HeartMuLa / DSP) ─────────────────────
-
-  // POST /api/v1/audio/generate — encola generación de audio en el motor Python
-  app.post('/audio/generate', async (req, reply) => {
-    const { AudioGenerateRequestSchema } = await import('../../core/contracts.js')
-    const { audioEngineClient } = await import('../../services/AudioEngineClient.js')
-
-    const parsed = AudioGenerateRequestSchema.safeParse(req.body)
-    if (!parsed.success) throw new ValidationError(parsed.error.flatten())
-
-    const job = await audioEngineClient.generate({
-      genre:            parsed.data.genre,
-      mood:             parsed.data.mood,
-      language:         parsed.data.language,
-      duration_seconds: parsed.data.duration_seconds,
-      lyrics:           parsed.data.lyrics,
-      bpm:              parsed.data.bpm,
-      title:            parsed.data.title,
-      structure:        parsed.data.structure,
-      skip_mastering:   parsed.data.skip_mastering,
-      skip_analysis:    parsed.data.skip_analysis,
-      section_name:     parsed.data.section_name,
-      section_emotion:  parsed.data.section_emotion,
-      section_energy:   parsed.data.section_energy,
-      engine:           parsed.data.engine,
-    })
-
-    return reply.status(202).send(successResponse({
-      ...job,
-      download_url: `/api/v1/audio/download/${encodeURIComponent(job.track_id)}`,
-      status_url: `/api/v1/audio/status/${encodeURIComponent(job.track_id)}`,
-    }))
-  })
-
-  // GET /api/v1/audio/status/:trackId — consulta estado del track
-  app.get('/audio/status/:trackId', async (req, reply) => {
-    const { audioEngineClient } = await import('../../services/AudioEngineClient.js')
-    const { trackId } = req.params as { trackId: string }
-    if (!trackId) throw new ValidationError({ trackId: ['trackId es requerido'] })
-
-    const status = await audioEngineClient.getStatus(trackId)
-    return reply.status(200).send(successResponse({
-      ...status,
-      download_url: `/api/v1/audio/download/${encodeURIComponent(trackId)}`,
-    }))
-  })
-
-  // GET /api/v1/audio/download/:trackId — proxy con JWT (el motor Python no se
-  // expone directamente; la descarga pasa por Node y valida el token).
-  app.get('/audio/download/:trackId', async (req, reply) => {
-    const { audioEngineClient } = await import('../../services/AudioEngineClient.js')
-    const { trackId } = req.params as { trackId: string }
-    if (!trackId) throw new ValidationError({ trackId: ['trackId es requerido'] })
-
-    const upstream = await fetch(audioEngineClient.getDownloadUrl(trackId), {
-      signal: AbortSignal.timeout(60_000),
-    })
-
-    if (!upstream.ok) {
-      const text = await upstream.text()
-      return reply.status(upstream.status >= 500 ? 502 : upstream.status).send({
-        success: false,
-        error:   { code: 'DOWNLOAD_FAILED', message: text.slice(0, 500) },
-      })
-    }
-
-    const buf = Buffer.from(await upstream.arrayBuffer())
-    return reply
-      .header('content-type',         upstream.headers.get('content-type') ?? 'audio/wav')
-      .header('content-length',       String(buf.length))
-      .header('content-disposition',  `attachment; filename="${trackId}.wav"`)
-      .header('cache-control',        'private, max-age=0, no-store')
-      .send(buf)
-  })
-
-  // GET /api/v1/audio/health — estado de salud del motor de audio Python
-  app.get('/audio/health', async (_req, reply) => {
-    const { audioEngineClient } = await import('../../services/AudioEngineClient.js')
-    const isHealthy = await audioEngineClient.isHealthy()
-    return reply.status(isHealthy ? 200 : 503).send(successResponse({
-      healthy: isHealthy,
-      service: 'HeartMuLa Audio Engine (Python)',
-    }))
   })
 }

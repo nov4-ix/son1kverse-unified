@@ -125,7 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         selected: AdapterHealth | None = None
         reasons: list[str] = []
         if mode == "auto":
-            for engine in (EngineName.ACE_STEP, EngineName.HEARTMULA):
+            for engine in (EngineName.ACE_STEP,):
                 candidate = snapshot[engine]
                 if candidate.ready:
                     selected = candidate

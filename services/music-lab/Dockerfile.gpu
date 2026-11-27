@@ -1,12 +1,16 @@
 # GPU image. Model weights are NEVER baked in: mount them at /models.
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    MUSIC_LAB_MODE=auto \
+    MUSIC_LAB_MODE=ace-step \
     MUSIC_LAB_OUTPUT_DIR=/outputs \
+    MUSIC_LAB_MAX_CONCURRENCY=1 \
+    ACE_STEP_MODEL_PATH=/models/ace-step \
+    ACE_STEP_DEVICE=cuda \
+    ACE_STEP_DTYPE=bfloat16 \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:$PATH
 
@@ -17,6 +21,7 @@ RUN apt-get update \
         software-properties-common \
         ca-certificates \
         curl \
+        git \
         libsndfile1 \
         ffmpeg \
     && add-apt-repository -y ppa:deadsnakes/ppa \
@@ -28,7 +33,7 @@ RUN apt-get update \
 
 COPY requirements.txt requirements-gpu.txt requirements-ace-step.txt ./
 RUN pip install --no-cache-dir -r requirements-gpu.txt \
-    && pip install --no-cache-dir --no-deps -r requirements-ace-step.txt
+    && pip install --no-cache-dir --no-deps --ignore-requires-python -r requirements-ace-step.txt
 
 COPY app ./app
 COPY scripts ./scripts

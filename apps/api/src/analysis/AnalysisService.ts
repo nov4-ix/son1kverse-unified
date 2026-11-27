@@ -7,7 +7,7 @@ import type { ArtistProfile, CreativeIntent } from '../core/types.js'
 import { AgentType, ArtifactType, Emotion } from '../core/types.js'
 import { AnalysisFailedError } from '../core/errors.js'
 import { eventBus, SystemEvent } from '../core/events.js'
-import { config } from '../config/index.js'
+import { logger } from '../lib/logger.js'
 
 // El proveedor se inyecta para evitar acoplamiento
 interface LLMProvider {
@@ -28,7 +28,7 @@ export class AnalysisService implements IAnalysisService {
       return intent
     } catch {
       // Fallback: análisis heurístico local si el provider falla o no devuelve JSON válido
-      console.warn('[AnalysisService] Provider falló o no devolvió JSON válido, usando análisis heurístico')
+      logger.warn('Provider falló o no devolvió JSON válido; usando análisis heurístico')
       const intent = await this.heuristicAnalysis(prompt, profile)
       eventBus.emit(SystemEvent.INTENT_ANALYZED, { intent, profileId: profile.id })
       return intent

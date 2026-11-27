@@ -6,6 +6,7 @@ import type { SaveMemoryDTO } from '../core/contracts.js'
 import { MemoryRepository } from '../storage/repositories/MemoryRepository.js'
 import { EmbeddingService } from './EmbeddingService.js'
 import { eventBus, SystemEvent } from '../core/events.js'
+import { logger } from '../lib/logger.js'
 
 export class MemoryService implements IMemoryService {
   private readonly repo:      MemoryRepository
@@ -74,7 +75,7 @@ export class MemoryService implements IMemoryService {
   async consolidate(profileId: string): Promise<void> {
     const pruned = await this.repo.pruneByScore(profileId, 0.1)
     eventBus.emit(SystemEvent.MEMORY_CONSOLIDATED, { profileId, pruned, timestamp: new Date() })
-    console.log(`[MemoryService] Consolidado: ${pruned} memorias eliminadas para ${profileId}`)
+    logger.info({ profileId, pruned }, 'Memoria consolidada')
   }
 
   async deleteMemory(id: string): Promise<void> {

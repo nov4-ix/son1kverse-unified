@@ -14,6 +14,7 @@ coverage/
 output/
 .cache/
 
+.venv/
 services/music-lab/.venv/
 services/music-lab/outputs/
 services/music-lab/.env
@@ -22,3 +23,13 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 services/music-lab/models/
+ACE-Step-1.5/
+
+# Local env, configs & test outputs
+deploy.env
+.claude/
+Modelfile
+config.yaml
+config.yaml.save
+services/music-lab/ab_deapi_results/
+.agent/skills

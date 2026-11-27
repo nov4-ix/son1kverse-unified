@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class EngineName(StrEnum):
     SIMULATION = "simulation"
     ACE_STEP = "ace-step"
-    HEARTMULA = "heartmula"
 
 
 class OutputFormat(StrEnum):
@@ -45,6 +44,7 @@ class GenerationParams(BaseModel):
     output_format: OutputFormat = OutputFormat.WAV
     master: bool = False
     engine: EngineName | None = None
+    quality_preset: str | None = Field(default=None, max_length=32)
 
 
 class GenerateRequest(GenerationParams):

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPixelPersonalityPrompt, selectPixelMood, selectPixelTone } from '../../src/core/pixel/pixelPersonality.js'
+import { buildPixelPersonalityPrompt, selectPixelMood, selectPixelTone } from '@son1k/shared-types'
 
 describe('pixelPersonality', () => {
   it('selects the poetic mood for nostalgic emotions', () => {

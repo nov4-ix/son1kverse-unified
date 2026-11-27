@@ -5,4 +5,12 @@
 #   pip install --no-deps -r requirements-ace-step.txt
 #
 # Runtime dependencies are declared in requirements-gpu.txt.
+#
+# Upstream declares requires-python >=3.11,<3.13. On Python 3.13 the package
+# still imports and runs, so add --ignore-requires-python:
+#
+#   pip install --no-deps --ignore-requires-python -r requirements-ace-step.txt
+#
+# torch/torchvision/torchaudio must stay on a matching set (see
+# requirements-gpu.txt): 2.10.0/0.25.0/2.10.0 or 2.11.0/0.26.0/2.11.0.
 ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git@main

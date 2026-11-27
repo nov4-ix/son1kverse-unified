@@ -10,9 +10,14 @@
 #   ACE_STEP_MODEL_PATH=...         Checkpoint dir (default: /content/ace-step-models)
 #   ACE_STEP_DEVICE=cuda            cuda | cpu | auto
 #   ACE_STEP_USE_LM=false           true also loads the 5Hz LM (heavier)
+#   ACE_STEP_OFFLOAD=true           CPU offload for 16 GB cards (T4)
+#   ACE_STEP_DTYPE=bfloat16         bfloat16 | float16 | float32
+#                                   T4 medido: bfloat16 forzado funciona 7/7;
+#                                   float16 produce latentes NaN. No usar float16.
+#   ACE_STEP_QUANTIZATION=          opcional (requiere torchao instalado aparte)
 #   MUSIC_LAB_OUTPUT_DIR=...        Generated audio dir (default: <repo>/outputs)
 #   MUSIC_LAB_API_KEY=...           Enables x-api-key auth on /v1/*
-#   PORT=8001                       Local HTTP port
+#   PORT=8002                       Local HTTP port
 #   CLOUDFLARED_BIN=/tmp/cloudflared
 set -Eeuo pipefail
 
@@ -20,9 +25,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 PYTHON="${PYTHON:-python3}"
-PORT="${PORT:-8001}"
+PORT="${PORT:-8002}"
 LOG_DIR="${MUSIC_LAB_LOG_DIR:-$ROOT/outputs/colab-logs}"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-/tmp/cloudflared}"
+
+if ! command -v nvidia-smi >/dev/null 2>&1; then
+  echo "[music-lab] No se encontró nvidia-smi: este script requiere una GPU (T4 o superior)." >&2
+  echo "[music-lab] Para CPU usa MUSIC_LAB_MODE=simulation y 'make lab-dev'." >&2
+  exit 1
+fi
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 
 if [[ -d /content ]]; then
   DEFAULT_MODELS="/content/ace-step-models"
@@ -32,8 +44,20 @@ fi
 
 export MUSIC_LAB_MODE="ace-step"
 export MUSIC_LAB_OUTPUT_DIR="${MUSIC_LAB_OUTPUT_DIR:-$ROOT/outputs}"
+export MUSIC_LAB_API_KEY="${MUSIC_LAB_API_KEY:-}"
+# El motor real exige API key (config.py falla al arrancar sin ella). Si no hay, se genera una.
+if [ -z "$MUSIC_LAB_API_KEY" ]; then
+  MUSIC_LAB_API_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+  export MUSIC_LAB_API_KEY
+  echo "MUSIC_LAB_API_KEY generada para esta sesion: $MUSIC_LAB_API_KEY"
+fi
 export ACE_STEP_MODEL_PATH="${ACE_STEP_MODEL_PATH:-$DEFAULT_MODELS}"
 export ACE_STEP_DEVICE="${ACE_STEP_DEVICE:-cuda}"
+export ACE_STEP_DTYPE="${ACE_STEP_DTYPE:-bfloat16}"
+export ACE_STEP_QUANTIZATION="${ACE_STEP_QUANTIZATION:-}"
+export ACE_STEP_OFFLOAD="${ACE_STEP_OFFLOAD:-true}"
+export ACE_STEP_USE_LM="${ACE_STEP_USE_LM:-false}"
+export ACE_STEP_CONFIG_PATH="${ACE_STEP_CONFIG_PATH:-acestep-v15-turbo}"
 export ACE_STEP_AUTO_DOWNLOAD="${ACE_STEP_AUTO_DOWNLOAD:-true}"
 
 mkdir -p "$LOG_DIR" "$ACE_STEP_MODEL_PATH"
@@ -48,15 +72,35 @@ echo "[music-lab] Installing GPU requirements (torch CUDA, ACE-Step runtime)..."
 # Upstream pins its own torch wheel and vendors nano-vllm outside PyPI, so the
 # official package must be installed without dependency resolution. The real
 # runtime dependencies were installed by requirements-gpu.txt.
+# --ignore-requires-python is required on Python 3.13 (upstream declares <3.13).
 echo "[music-lab] Installing official ACE-Step 1.5 package (--no-deps)..."
-"$PYTHON" -m pip install --no-deps -r requirements-ace-step.txt
+"$PYTHON" -m pip install --no-deps --ignore-requires-python -r requirements-ace-step.txt
 
 "$PYTHON" - <<'PY'
+import torch
+import torchaudio
+import torchvision
+
 from acestep.handler import AceStepHandler
 from acestep.inference import GenerationConfig, GenerationParams, generate_music
 
+expected = {
+    "torch": "2.10.0",
+    "torchvision": "0.25.0",
+    "torchaudio": "2.10.0",
+}
+actual = {
+    "torch": torch.__version__.split("+")[0],
+    "torchvision": torchvision.__version__.split("+")[0],
+    "torchaudio": torchaudio.__version__.split("+")[0],
+}
+if actual != expected:
+    raise SystemExit(
+        f"[music-lab] torch stack mismatch: {actual}; expected {expected}. "
+        "Install the matching set from requirements-gpu.txt."
+    )
 assert AceStepHandler and GenerationParams and GenerationConfig and generate_music
-print("[music-lab] acestep imports verified")
+print(f"[music-lab] acestep imports verified (torch {actual['torch']} cu128)")
 PY
 
 if [[ ! -x "$CLOUDFLARED_BIN" ]]; then
@@ -88,7 +132,9 @@ trap cleanup EXIT INT TERM
 
 echo "[music-lab] Starting uvicorn in MUSIC_LAB_MODE=$MUSIC_LAB_MODE on :$PORT..."
 (
-  export MUSIC_LAB_MODE ACE_STEP_MODEL_PATH ACE_STEP_DEVICE ACE_STEP_AUTO_DOWNLOAD
+  export MUSIC_LAB_MODE MUSIC_LAB_OUTPUT_DIR MUSIC_LAB_API_KEY
+  export ACE_STEP_MODEL_PATH ACE_STEP_DEVICE ACE_STEP_DTYPE ACE_STEP_QUANTIZATION
+  export ACE_STEP_OFFLOAD ACE_STEP_USE_LM ACE_STEP_CONFIG_PATH ACE_STEP_AUTO_DOWNLOAD
   exec "$PYTHON" -m uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
 ) >"$UVICORN_LOG" 2>&1 &
 UVICORN_PID=$!

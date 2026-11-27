@@ -61,17 +61,10 @@ export enum SessionStatus {
 }
 
 // ─── Pixel Personality ───────────────────────────────────────────────────────
+// Fuente única: packages/shared-types (importado también por apps/web).
 
-export type PixelMoodId = 'casual-technical' | 'poetic' | 'motivational' | 'rebellious'
-
-export type PixelTone = {
-  moodId:      PixelMoodId
-  moodName:    string
-  tone:        string
-  style:       string
-  direction:   string
-  temperature: number
-}
+import type { PixelTone } from '@son1k/shared-types'
+export type { PixelMoodId, PixelTone } from '@son1k/shared-types'
 
 // ─── Domain Types ─────────────────────────────────────────────────────────────
 
@@ -198,8 +191,8 @@ export type OrchestrationRequest = {
     // Audio: duración e idioma del track cuando el agente MUSIC dispara el motor
     durationSeconds?: number | undefined
     language?:        string | undefined
-    // Selección de motor de generación (Fase 2 - ACE-Step)
-    engine?:          'heartmula' | 'ace_step' | undefined
+    // Motor de generación GPU: solo ACE-Step.
+    engine?:          'ace_step' | undefined
   } | undefined
 }
 

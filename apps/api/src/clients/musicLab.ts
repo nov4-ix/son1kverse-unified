@@ -2,9 +2,10 @@
 // Cliente HTTP tipado para el servicio FastAPI `services/music-lab`.
 // Los tipos están escritos a mano y reflejan services/music-lab/openapi.json.
 
+import { isXlQualityPreset } from '@son1k/shared-types'
 import { config } from '../config/index.js'
 
-export type MusicLabEngine = 'simulation' | 'ace-step' | 'heartmula'
+export type MusicLabEngine = 'simulation' | 'ace-step'
 export type MusicLabOutputFormat = 'wav' | 'mp3'
 export type MusicLabJobStatus = 'queued' | 'running' | 'succeeded' | 'failed'
 export type MusicLabStem = 'drums' | 'bass' | 'other'
@@ -22,6 +23,7 @@ export interface MusicLabGenerateParams {
   output_format?: MusicLabOutputFormat | undefined
   master?: boolean | undefined
   engine?: MusicLabEngine | null | undefined
+  quality_preset?: string | null | undefined
 }
 
 export interface MusicLabRepaintParams extends MusicLabGenerateParams {
@@ -122,12 +124,15 @@ export interface MusicLabDownload {
 export interface MusicLabWaitOptions {
   timeoutMs?: number
   pollIntervalMs?: number
+  requestTimeoutMs?: number
 }
 
 export interface MusicLabClientOptions {
   baseUrl?: string
   apiKey?: string
   timeoutMs?: number
+  retries?: number
+  retryBackoffMs?: number
 }
 
 export class MusicLabClientError extends Error {
@@ -176,15 +181,28 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+const RETRYABLE_STATUS = new Set([429, 502, 503, 504])
+
 export class MusicLabClient {
   private readonly baseUrl: string
   private readonly apiKey: string
   private readonly timeoutMs: number
+  private readonly retries: number
+  private readonly retryBackoffMs: number
 
   constructor(options: MusicLabClientOptions = {}) {
-    this.baseUrl = (options.baseUrl ?? config.MUSIC_LAB_URL).replace(/\/$/, '')
+    const rawUrl = options.baseUrl !== undefined && options.baseUrl.trim() !== ''
+      ? options.baseUrl
+      : config.MUSIC_LAB_URL
+    this.baseUrl = rawUrl.replace(/\/$/, '')
     this.apiKey = options.apiKey ?? config.MUSIC_LAB_API_KEY
-    this.timeoutMs = options.timeoutMs ?? 15_000
+    this.timeoutMs = options.timeoutMs ?? config.MUSIC_LAB_TIMEOUT_MS
+    this.retries = options.retries ?? config.MUSIC_LAB_RETRIES
+    this.retryBackoffMs = options.retryBackoffMs ?? config.MUSIC_LAB_RETRY_BACKOFF_MS
+  }
+
+  get targetUrl(): string {
+    return this.baseUrl
   }
 
   async health(): Promise<MusicLabServiceHealth> {
@@ -223,8 +241,12 @@ export class MusicLabClient {
     })
   }
 
-  async getJob(jobId: string): Promise<MusicLabJob> {
-    return this.requestJson<MusicLabJob>(`/v1/jobs/${encodeURIComponent(jobId)}`)
+  async getJob(jobId: string, timeoutMs?: number): Promise<MusicLabJob> {
+    return this.requestJson<MusicLabJob>(
+      `/v1/jobs/${encodeURIComponent(jobId)}`,
+      undefined,
+      timeoutMs,
+    )
   }
 
   async getAudio(jobId: string, stem?: MusicLabStem): Promise<MusicLabDownload> {
@@ -248,10 +270,11 @@ export class MusicLabClient {
   async waitForJob(jobId: string, options: MusicLabWaitOptions = {}): Promise<MusicLabJob> {
     const timeoutMs = options.timeoutMs ?? 10 * 60_000
     const pollIntervalMs = options.pollIntervalMs ?? 1_000
+    const requestTimeoutMs = options.requestTimeoutMs ?? Math.max(this.timeoutMs, 60_000)
     const startedAt = Date.now()
 
     while (Date.now() - startedAt < timeoutMs) {
-      const job = await this.getJob(jobId)
+      const job = await this.getJob(jobId, requestTimeoutMs)
       if (job.status === 'succeeded') return job
       if (job.status === 'failed') {
         const error = job.error
@@ -290,8 +313,12 @@ export class MusicLabClient {
     return job.result
   }
 
-  private async requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await this.send(path, init)
+  private async requestJson<T>(
+    path: string,
+    init?: RequestInit,
+    timeoutMs?: number,
+  ): Promise<T> {
+    const response = await this.send(path, init, timeoutMs)
     const body = await this.readJson(response)
     if (!response.ok) {
       const payload = parseErrorPayload(body)
@@ -310,21 +337,37 @@ export class MusicLabClient {
     if (init?.body !== undefined && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }
-    try {
-      return await fetch(`${this.baseUrl}${path}`, {
-        ...init,
-        headers,
-        signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      throw new MusicLabClientError(
-        'MUSIC_LAB_UNREACHABLE',
-        `Music Lab is unreachable: ${message}`,
-        502,
-        { cause: message },
-      )
+
+    // Solo las lecturas son idempotentes: reintentar un POST podría crear
+    // jobs duplicados y consumir cuota dos veces.
+    const method = (init?.method ?? 'GET').toUpperCase()
+    const attempts = method === 'GET' || method === 'HEAD' ? this.retries + 1 : 1
+    let lastError: unknown = null
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const response = await fetch(`${this.baseUrl}${path}`, {
+          ...init,
+          headers,
+          signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
+        })
+        const retryable = RETRYABLE_STATUS.has(response.status)
+        if (!retryable || attempt === attempts - 1) return response
+        await response.body?.cancel().catch(() => undefined)
+      } catch (error) {
+        lastError = error
+        if (attempt === attempts - 1 || init?.signal?.aborted) break
+      }
+      await sleep(this.retryBackoffMs * 2 ** attempt)
     }
+
+    const message = lastError instanceof Error ? lastError.message : String(lastError)
+    throw new MusicLabClientError(
+      'MUSIC_LAB_UNREACHABLE',
+      `Music Lab is unreachable: ${message}`,
+      502,
+      { cause: message, retries: attempts - 1 },
+    )
   }
 
   private async readJson(response: Response): Promise<unknown> {
@@ -337,3 +380,10 @@ export class MusicLabClient {
 }
 
 export const musicLabClient = new MusicLabClient()
+export const musicLabXlClient = new MusicLabClient({
+  baseUrl: config.MUSIC_LAB_XL_URL ?? config.MUSIC_LAB_URL,
+})
+
+export function getMusicLabClient(qualityPreset?: string | null): MusicLabClient {
+  return isXlQualityPreset(qualityPreset) ? musicLabXlClient : musicLabClient
+}
