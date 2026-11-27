@@ -355,7 +355,7 @@ def test_ace_step_metadata_includes_reproducibility_fields(tmp_path: Path) -> No
             success=True,
             audios=[
                 {
-                    "tensor": FakeTensor(np.zeros((1, 4800), dtype=np.float32)),
+                    "tensor": FakeTensor(np.full((1, 4800), 0.1, dtype=np.float32)),
                     "sample_rate": 48000,
                     "params": {"seed": 5},
                 }
