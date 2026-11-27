@@ -25,21 +25,22 @@ export type GenerateRequest = {
 }
 
 export type RepaintRequest = GenerateRequest & {
-  source_audio_path: string
+  source_generation_id: string
   start_s: number
   end_s: number
 }
 
 export type CoverRequest = GenerateRequest & {
-  source_audio_path: string
+  source_generation_id: string
 }
 
 export type StemsRequest = GenerateRequest & {
-  source_audio_path?: string | null
+  source_generation_id?: string | null
 }
 
 export type JobAccepted = {
   job_id: string
+  generation_id?: string
   status: JobStatus
   status_url: string
   job_url?: string
@@ -241,6 +242,7 @@ function parseJobAccepted(value: unknown): JobAccepted {
   }
   return {
     job_id: asString(value['job_id']),
+    generation_id: typeof value['generation_id'] === 'string' ? value['generation_id'] : undefined,
     status: asString(value['status'], 'queued') as JobStatus,
     status_url: asString(value['status_url']),
     job_url: typeof value['job_url'] === 'string' ? value['job_url'] : undefined,

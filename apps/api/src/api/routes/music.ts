@@ -55,19 +55,19 @@ const MusicLabGenerateSchema = z.object({
 })
 
 const MusicLabRepaintSchema = MusicLabGenerateSchema.extend({
-  source_audio_path: z.string().min(1),
-  start_s:           z.number().min(0),
-  end_s:             z.number().gt(0),
+  source_generation_id: z.string().cuid(),
+  start_s:              z.number().min(0),
+  end_s:                z.number().gt(0),
 }).refine((value) => value.start_s < value.end_s, {
   message: 'start_s debe ser menor que end_s',
 })
 
 const MusicLabCoverSchema = MusicLabGenerateSchema.extend({
-  source_audio_path: z.string().min(1),
+  source_generation_id: z.string().cuid(),
 })
 
 const MusicLabStemsSchema = MusicLabGenerateSchema.extend({
-  source_audio_path: z.string().nullable().optional(),
+  source_generation_id: z.string().cuid().nullable().optional(),
 })
 
 const JobParamsSchema = z.object({
@@ -139,6 +139,60 @@ function presetForGeneration(
   generation: Pick<GenerationRow, 'qualityPreset' | 'modelVersion'>,
 ): string | null {
   return generation.qualityPreset ?? generation.modelVersion ?? null
+}
+
+/**
+ * El path de audio fuente NUNCA se acepta desde el body: se resuelve desde una
+ * Generation del usuario autenticado. Así un cliente no puede hacer que la API
+ * lea un archivo arbitrario del worker de Music Lab.
+ */
+async function resolveSourceAudioPath(userId: string, generationId: string): Promise<string> {
+  const generation = await prisma.generation.findUnique({
+    where: { id: generationId },
+    select: {
+      id: true,
+      userId: true,
+      status: true,
+      externalJobId: true,
+      qualityPreset: true,
+      modelVersion: true,
+    },
+  })
+  if (generation === null) throw new NotFoundError('Generación fuente no encontrada')
+  if (generation.userId !== userId) throw new ForbiddenError()
+  if (generation.status !== GenerationStatus.COMPLETED) {
+    throw new ValidationError({
+      source_generation_id: 'La generación fuente todavía no está completada',
+    })
+  }
+  if (generation.externalJobId === null || generation.externalJobId === '') {
+    throw new ValidationError({
+      source_generation_id: 'La generación fuente no tiene un job de Music Lab asociado',
+    })
+  }
+
+  const client = getMusicLabClient(presetForGeneration(generation))
+  let job: MusicLabJob
+  try {
+    job = await client.getJob(generation.externalJobId)
+  } catch (error) {
+    if (error instanceof MusicLabClientError && error.status === 404) {
+      throw new NotFoundError('La generación fuente ya no está disponible en Music Lab')
+    }
+    throw error
+  }
+
+  if (
+    job.status !== 'succeeded'
+    || job.result === null
+    || !('audio_path' in job.result)
+    || job.result.audio_path === ''
+  ) {
+    throw new ValidationError({
+      source_generation_id: 'La generación fuente no tiene audio disponible',
+    })
+  }
+  return job.result.audio_path
 }
 
 async function getOwnedGeneration(jobId: string, userId: string): Promise<GenerationRow> {
@@ -326,10 +380,14 @@ function watchGeneration(generation: GenerationRow, jobId: string): void {
   timer.unref()
 }
 
+type StartGenerationParams = Parameters<typeof musicLabClient.generate>[0] & {
+  source_audio_path?: string | null
+}
+
 async function startGeneration(
   userId: string,
   operation: 'generate' | 'repaint' | 'cover' | 'stems',
-  params: Parameters<typeof musicLabClient.generate>[0],
+  params: StartGenerationParams,
 ): Promise<Record<string, unknown> & { generation_id: string }> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -494,21 +552,41 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
   app.post('/music/repaint', async (req, reply) => {
     const parsed = MusicLabRepaintSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
-    const job = await startGeneration(getAuthUserId(req), 'repaint', parsed.data)
+    const userId = getAuthUserId(req)
+    const { source_generation_id, ...rest } = parsed.data
+    const sourceAudioPath = await resolveSourceAudioPath(userId, source_generation_id)
+    const job = await startGeneration(userId, 'repaint', {
+      ...rest,
+      source_audio_path: sourceAudioPath,
+    })
     return reply.status(202).send(successResponse(job))
   })
 
   app.post('/music/cover', async (req, reply) => {
     const parsed = MusicLabCoverSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
-    const job = await startGeneration(getAuthUserId(req), 'cover', parsed.data)
+    const userId = getAuthUserId(req)
+    const { source_generation_id, ...rest } = parsed.data
+    const sourceAudioPath = await resolveSourceAudioPath(userId, source_generation_id)
+    const job = await startGeneration(userId, 'cover', {
+      ...rest,
+      source_audio_path: sourceAudioPath,
+    })
     return reply.status(202).send(successResponse(job))
   })
 
   app.post('/music/stems', async (req, reply) => {
     const parsed = MusicLabStemsSchema.safeParse(req.body)
     if (!parsed.success) throw new ValidationError(parsed.error.flatten())
-    const job = await startGeneration(getAuthUserId(req), 'stems', parsed.data)
+    const userId = getAuthUserId(req)
+    const { source_generation_id, ...rest } = parsed.data
+    const sourceAudioPath = source_generation_id === null || source_generation_id === undefined
+      ? undefined
+      : await resolveSourceAudioPath(userId, source_generation_id)
+    const job = await startGeneration(userId, 'stems', {
+      ...rest,
+      ...(sourceAudioPath === undefined ? {} : { source_audio_path: sourceAudioPath }),
+    })
     return reply.status(202).send(successResponse(job))
   })
 

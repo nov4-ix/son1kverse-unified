@@ -40,6 +40,7 @@ type StudioContextValue = {
   job: MusicJob | null
   jobStatus: JobStatus | 'idle'
   lastAudioPath: string | null
+  lastGenerationId: string | null
   lastJobId: string | null
   lastAudioUrl: string | null
   busy: boolean
@@ -65,6 +66,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [job, setJob] = useState<MusicJob | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | 'idle'>('idle')
   const [lastAudioPath, setLastAudioPath] = useState<string | null>(null)
+  const [lastGenerationId, setLastGenerationId] = useState<string | null>(null)
   const [lastJobId, setLastJobId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -116,11 +118,12 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const runJob = useCallback(async (start: () => Promise<{ job_id: string }>, arBanner?: string) => {
+  const runJob = useCallback(async (start: () => Promise<{ job_id: string; generation_id?: string }>, arBanner?: string) => {
     setBusy(true); setError(null); setJobStatus('queued'); setPixelSignal(arBanner ?? signalForJob('queued'))
     try {
       const accepted = await start()
       setLastJobId(accepted.job_id)
+      setLastGenerationId(accepted.generation_id ?? null)
       const finished = await api.pollJob(accepted.job_id, token, (tick) => {
         setJob(tick); setJobStatus(tick.status)
         if (tick.status !== 'queued') setPixelSignal(signalForJob(tick.status))
@@ -160,32 +163,32 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   }, [knobs, releases.length, runJob, token])
 
   const repaint = useCallback(async (i: { prompt: string; start_s: number; end_s: number; qualityPreset?: QualityPreset }) => {
-    if (!lastAudioPath) { setError('Necesitas un audio fuente desde La Terminal'); return }
+    if (!lastGenerationId) { setError('Necesitas un audio fuente desde La Terminal'); return }
     await runJob(() => api.repaint({
       prompt: i.prompt,
-      source_audio_path: lastAudioPath,
+      source_generation_id: lastGenerationId,
       start_s: i.start_s,
       end_s: i.end_s,
       style_tags: knobsToStyleTags(knobs),
       output_format: 'wav',
       quality_preset: i.qualityPreset ?? 'turbo',
     }, token))
-  }, [knobs, lastAudioPath, runJob, token])
+  }, [knobs, lastGenerationId, runJob, token])
 
   const cover = useCallback(async (i: { prompt: string; qualityPreset?: QualityPreset }) => {
-    if (!lastAudioPath) { setError('Necesitas un audio fuente desde La Terminal'); return }
+    if (!lastGenerationId) { setError('Necesitas un audio fuente desde La Terminal'); return }
     await runJob(() => api.cover({
       prompt: i.prompt,
-      source_audio_path: lastAudioPath,
+      source_generation_id: lastGenerationId,
       style_tags: knobsToStyleTags(knobs),
       output_format: 'wav',
       quality_preset: i.qualityPreset ?? 'turbo',
     }, token))
-  }, [knobs, lastAudioPath, runJob, token])
+  }, [knobs, lastGenerationId, runJob, token])
 
   const splitStems = useCallback(async (i: { prompt: string }) => {
-    await runJob(() => api.stems({ prompt: i.prompt, source_audio_path: lastAudioPath, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }, token))
-  }, [knobs, lastAudioPath, runJob, token])
+    await runJob(() => api.stems({ prompt: i.prompt, source_generation_id: lastGenerationId, style_tags: knobsToStyleTags(knobs), output_format: 'wav' }, token))
+  }, [knobs, lastGenerationId, runJob, token])
 
   const addRelease = useCallback((title: string, caption: string) => {
     if (!lastJobId) return
@@ -203,6 +206,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       job,
       jobStatus,
       lastAudioPath,
+      lastGenerationId,
       lastJobId,
       lastAudioUrl,
       busy,
@@ -218,7 +222,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       splitStems,
       addRelease,
     }),
-    [addRelease, busy, capabilities, cover, error, generate, generations, generationsLoading, job, jobStatus, knobs, lastAudioPath, lastAudioUrl, lastJobId, pixelSignal, refreshGenerations, releases, repaint, setKnob, splitStems, view],
+    [addRelease, busy, capabilities, cover, error, generate, generations, generationsLoading, job, jobStatus, knobs, lastAudioPath, lastAudioUrl, lastGenerationId, lastJobId, pixelSignal, refreshGenerations, releases, repaint, setKnob, splitStems, view],
   )
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>
 }
