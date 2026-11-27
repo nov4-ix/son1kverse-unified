@@ -111,6 +111,8 @@ export interface MusicLabCapabilities {
   modes: string[]
   engines: MusicLabEngine[]
   methods: string[]
+  /** Métodos del motor activo; ausente en versiones anteriores de Music Lab. */
+  active_methods?: string[]
   output_formats: MusicLabOutputFormat[]
   max_concurrency: number
 }

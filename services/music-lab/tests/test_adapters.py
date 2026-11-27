@@ -15,9 +15,10 @@ from pydantic import ValidationError
 from app.adapters import ace_step as ace_step_module
 from app.adapters.ace_step import AceStepAdapter, force_handler_dtype, format_keyscale
 from app.adapters.registry import AdapterRegistry
+from app.audio import read_audio, write_audio
 from app.config import Settings
-from app.errors import InvalidRequestError
-from app.schemas import EngineName, GenerateRequest
+from app.errors import InvalidRequestError, NotSupportedError
+from app.schemas import EngineName, GenerateRequest, OutputFormat, StemsRequest
 from tests.helpers import run
 
 
@@ -430,3 +431,110 @@ def test_quality_preset_applies_steps_guidance_and_lm(tmp_path: Path) -> None:
             "generate",
             GenerateRequest(prompt="x", duration_s=10.0, quality_preset="unknown"),
         )
+
+
+def test_stems_capability_requires_base_checkpoint(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        for config_path, expected in (
+            ("acestep-v15-turbo", False),
+            ("acestep-v15-sft", False),
+            ("acestep-v15-xl-turbo", False),
+            ("acestep-v15-base", True),
+            ("acestep-v15-xl-base", True),
+        ):
+            adapter = AceStepAdapter(
+                _settings(
+                    tmp_path,
+                    music_lab_mode="ace-step",
+                    music_lab_allow_no_auth=True,
+                    ace_step_config_path=config_path,
+                )
+            )
+            assert ("stems" in await adapter.capabilities()) is expected, config_path
+
+    run(scenario())
+
+
+def test_extract_params_use_track_instruction_and_skip_lm(tmp_path: Path) -> None:
+    class FakeParams:
+        def __init__(self, **kwargs: Any) -> None:
+            self.__dict__.update(kwargs)
+
+    adapter = AceStepAdapter(_settings(tmp_path, ace_step_use_lm=True))
+    adapter._inference = SimpleNamespace(GenerationParams=FakeParams)
+    source = tmp_path / "mix.wav"
+
+    params = adapter._build_params(
+        "extract", StemsRequest(prompt="x"), source, track="drums"
+    )
+
+    assert params.task_type == "extract"
+    assert params.instruction == "Extract the DRUMS track from the audio:"
+    assert params.thinking is False
+    assert params.src_audio == str(source)
+    with pytest.raises(InvalidRequestError):
+        adapter._build_params("extract", StemsRequest(prompt="x"), None, track="drums")
+
+
+def test_stems_rejected_on_turbo_checkpoint(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        adapter = AceStepAdapter(_settings(tmp_path))
+        with pytest.raises(NotSupportedError):
+            await adapter.stems(StemsRequest(prompt="x", source_audio_path="mix.wav"))
+
+    run(scenario())
+
+
+def test_stems_requires_source_audio(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        adapter = AceStepAdapter(
+            _settings(tmp_path, ace_step_config_path="acestep-v15-base")
+        )
+        with pytest.raises(InvalidRequestError):
+            await adapter.stems(StemsRequest(prompt="x"))
+
+    run(scenario())
+
+
+def test_stems_extracts_drums_bass_and_builds_residual(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        config = _settings(tmp_path, ace_step_config_path="acestep-v15-base")
+        adapter = AceStepAdapter(config)
+        sample_rate = config.music_lab_sample_rate
+        frames = sample_rate // 2
+        mix = np.full((2, frames), 0.5, dtype=np.float32)
+        source = tmp_path / "mix.wav"
+        write_audio(source, mix, sample_rate, OutputFormat.WAV)
+        levels = {"drums": 0.2, "bass": 0.1}
+        calls: list[tuple[str, str | None]] = []
+
+        async def fake_load() -> None:
+            return None
+
+        def fake_run(
+            operation: str,
+            req: Any,
+            output_path: Path,
+            source_path: Path | None = None,
+            track: str | None = None,
+        ) -> tuple[float, dict[str, Any]]:
+            assert track is not None
+            calls.append((operation, track))
+            audio = np.full((2, frames), levels[track], dtype=np.float32)
+            write_audio(output_path, audio, sample_rate, OutputFormat.WAV)
+            return 0.5, {"model": "acestep-v15-base", "task_type": "extract"}
+
+        adapter.load = fake_load  # type: ignore[method-assign]
+        adapter._run_inference = fake_run  # type: ignore[method-assign]
+
+        result = await adapter.stems(
+            StemsRequest(prompt="x", source_audio_path=str(source))
+        )
+
+        assert calls == [("extract", "drums"), ("extract", "bass")]
+        assert set(result.stems) == {"drums", "bass", "other"}
+        assert result.metadata["stem_method"]["other"] == "residual"
+        other, _ = read_audio(Path(result.stems["other"]))
+        assert float(other.mean()) == pytest.approx(0.2, abs=1e-3)
+
+    run(scenario())

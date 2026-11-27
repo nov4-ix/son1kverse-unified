@@ -15,9 +15,13 @@ SILENCE_PEAK_THRESHOLD = 1e-6
 
 
 def validate_generated_audio(
-    audio: AudioArray, *, engine: str, operation: str
+    audio: AudioArray, *, engine: str, operation: str, allow_silence: bool = False
 ) -> None:
-    """Reject non-finite samples and fully silent renders before writing files."""
+    """Reject non-finite samples and fully silent renders before writing files.
+
+    ``allow_silence`` es para stems: una pista ausente en la mezcla es silencio
+    legitimo, pero NaN/Inf o audio vacio siguen siendo error.
+    """
     data = np.asarray(audio, dtype=np.float32)
     context = {"engine": engine, "operation": operation}
     if data.size == 0 or (data.ndim >= 2 and data.shape[-1] == 0):
@@ -28,7 +32,7 @@ def validate_generated_audio(
             details={**context, "reason": "non_finite"},
         )
     peak = float(np.max(np.abs(data)))
-    if peak <= SILENCE_PEAK_THRESHOLD:
+    if peak <= SILENCE_PEAK_THRESHOLD and not allow_silence:
         raise InvalidAudioError(
             "Generated audio is silent",
             details={**context, "reason": "silence", "peak": peak},

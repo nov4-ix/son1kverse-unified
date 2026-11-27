@@ -57,6 +57,13 @@
               }
             ]
           },
+          "active_methods": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Active Methods",
+            "type": "array"
+          },
           "default_mode": {
             "title": "Default Mode",
             "type": "string"

@@ -468,10 +468,17 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
   app.get("/music/capabilities", async (_req, reply) => {
     try {
       const caps = await musicLabClient.capabilities()
-      const supportsStems = caps.active_engine === "simulation" && caps.methods.includes("stems")
+      // Music Lab informa los métodos del motor activo. Si falta (versión anterior),
+      // solo simulation se considera capaz de stems.
+      const engineMethods =
+        caps.active_methods ??
+        (caps.active_engine === "simulation"
+          ? caps.methods
+          : caps.methods.filter((m) => m !== "stems"))
+      const supportsStems = caps.active_engine !== null && engineMethods.includes("stems")
       const activeMethods = supportsStems
-        ? caps.methods
-        : caps.methods.filter((m) => m !== "stems")
+        ? engineMethods
+        : engineMethods.filter((m) => m !== "stems")
       return reply.status(200).send(
         successResponse({
           ...caps,

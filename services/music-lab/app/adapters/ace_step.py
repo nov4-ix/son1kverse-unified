@@ -43,7 +43,7 @@ from app.audio import (
     validate_generated_audio,
     write_audio,
 )
-from app.config import Settings, get_quality_preset, get_settings
+from app.config import Settings, config_supports_stems, get_quality_preset, get_settings
 from app.errors import (
     EngineUnavailableError,
     InvalidRequestError,
@@ -67,6 +67,12 @@ _DURATION_MAX_S = 600.0
 _CAPTION_MAX_CHARS = 512
 _KEY_RE = re.compile(r"^\s*([A-Ga-g])([#b♭]?)\s*(.*?)\s*$")
 _DTYPE_CUDA_BFLOAT16_SUPPORT = {"bfloat16": True, "float16": False}
+# Pistas que ACE-Step extrae directamente; "other" se obtiene como residual.
+_EXTRACT_TRACKS = {"drums": "drums", "bass": "bass"}
+_TRACK_INSTRUCTIONS = {
+    "extract": "Extract the {track} track from the audio:",
+    "lego": "Generate the {track} track based on the audio context:",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -317,12 +323,16 @@ class AceStepAdapter(AudioGeneratorInterface):
         operation: str,
         req: GenerationParams,
         source_path: Path | None = None,
+        track: str | None = None,
     ) -> Any:
         if self._inference is None:
             raise JobExecutionError("ACE-Step pipeline is not loaded")
         inference = self._inference
         preset = self._quality_preset(req)
         use_lm = preset.use_lm if preset is not None else self._settings.ace_step_use_lm
+        if operation in _TRACK_INSTRUCTIONS:
+            # Upstream: con extract/lego el LM puede pisar el audio fuente.
+            use_lm = False
         inference_steps = (
             preset.inference_steps
             if preset is not None
@@ -342,7 +352,19 @@ class AceStepAdapter(AudioGeneratorInterface):
             "generate": "text2music",
             "repaint": "repaint",
             "cover": "cover",
+            "extract": "extract",
+            "lego": "lego",
         }[operation]
+        extra: dict[str, Any] = {}
+        if operation in _TRACK_INSTRUCTIONS:
+            if track is None or source_path is None:
+                raise InvalidRequestError(
+                    f"{operation} requires a track and a source audio",
+                    details={"operation": operation},
+                )
+            extra["instruction"] = _TRACK_INSTRUCTIONS[operation].format(
+                track=track.upper()
+            )
 
         return inference.GenerationParams(
             task_type=task_type,
@@ -364,6 +386,7 @@ class AceStepAdapter(AudioGeneratorInterface):
             src_audio=str(source_path) if source_path is not None else None,
             repainting_start=float(getattr(req, "start_s", 0.0)),
             repainting_end=float(getattr(req, "end_s", -1.0)),
+            **extra,
         )
 
     def _build_config(self, req: GenerationParams) -> Any:
@@ -401,12 +424,13 @@ class AceStepAdapter(AudioGeneratorInterface):
         req: GenerationParams,
         output_path: Path,
         source_path: Path | None = None,
+        track: str | None = None,
     ) -> tuple[float, dict[str, Any]]:
         """Run the official pipeline synchronously and write ``output_path``."""
         if self._dit_handler is None or self._inference is None:
             raise JobExecutionError("ACE-Step pipeline is not loaded")
 
-        params = self._build_params(operation, req, source_path)
+        params = self._build_params(operation, req, source_path, track)
         if operation == "repaint" and source_path is not None:
             source_audio, source_sr = read_audio(source_path)
             source_duration = source_audio.shape[1] / source_sr
@@ -470,7 +494,10 @@ class AceStepAdapter(AudioGeneratorInterface):
 
             array = ensure_stereo(np.asarray(array, dtype=np.float32))
             validate_generated_audio(
-                array, engine=self.engine.value, operation=operation
+                array,
+                engine=self.engine.value,
+                operation=operation,
+                allow_silence=operation == "extract",
             )
             target_sr = self._settings.music_lab_sample_rate
             array = resample_if_needed(array, native_sr, target_sr)
@@ -524,6 +551,8 @@ class AceStepAdapter(AudioGeneratorInterface):
         if operation == "repaint":
             metadata["repainting_start"] = params.repainting_start
             metadata["repainting_end"] = params.repainting_end
+        if track is not None:
+            metadata["track"] = track
         if source_path is not None:
             metadata["source_audio_path"] = str(source_path)
         return duration_s, metadata
@@ -567,14 +596,95 @@ class AceStepAdapter(AudioGeneratorInterface):
         source = self._resolve_source(req.source_audio_path)
         return await self._execute("cover", req, source)
 
+    def _supports_stems(self) -> bool:
+        return config_supports_stems(self._settings.ace_step_config_path)
+
     async def stems(self, req: StemsRequest) -> StemsResult:
-        raise NotSupportedError(
-            "ACE-Step does not expose drums/bass/other stem splitting in this build",
-            details={"engine": self.engine.value},
+        """Separar drums/bass con ``extract``; ``other`` es la mezcla menos ambos.
+
+        Solo funciona con un checkpoint base (extract no existe en turbo/SFT).
+        ``other`` es un residual aproximado: extract es generativo, no una
+        mascara, asi que la resta no es exacta y puede dejar artefactos.
+        """
+        if not self._supports_stems():
+            raise NotSupportedError(
+                "Stem extraction needs an ACE-Step base checkpoint "
+                "(extract/lego are not available on turbo or SFT models)",
+                details={
+                    "engine": self.engine.value,
+                    "config_path": self._settings.ace_step_config_path,
+                    "required": "acestep-v15-base",
+                },
+            )
+        if not req.source_audio_path:
+            raise InvalidRequestError(
+                "ACE-Step stems requires source_audio_path (extract works on an existing mix)",
+                details={"engine": self.engine.value},
+            )
+        source = self._resolve_source(req.source_audio_path)
+        await self.load()
+        job_id = uuid.uuid4().hex
+        job_dir = self._settings.music_lab_output_dir / f"ace-step-{job_id}"
+        job_dir.mkdir(parents=True, exist_ok=True)
+        fmt = req.output_format
+        sample_rate = self._settings.music_lab_sample_rate
+
+        paths: dict[str, Path] = {}
+        per_track: dict[str, dict[str, Any]] = {}
+        duration_s = 0.0
+        for stem, track in _EXTRACT_TRACKS.items():
+            target = job_dir / f"{stem}.{fmt.value}"
+            duration_s, meta = await asyncio.to_thread(
+                self._run_inference, "extract", req, target, source, track
+            )
+            paths[stem] = target
+            per_track[stem] = meta
+
+        other_path = job_dir / f"other.{fmt.value}"
+        await asyncio.to_thread(
+            self._write_residual, source, paths["drums"], paths["bass"], other_path, fmt
+        )
+        paths["other"] = other_path
+
+        metadata = dict(per_track["drums"])
+        metadata.update(
+            {
+                "operation": "stems",
+                "track": None,
+                "stem_method": {"drums": "extract", "bass": "extract", "other": "residual"},
+                "source_audio_path": str(source),
+            }
+        )
+        return StemsResult(
+            job_id=job_id,
+            stems={name: str(path) for name, path in paths.items()},
+            duration_s=duration_s,
+            sample_rate=sample_rate,
+            engine=self.engine,
+            mode=self.engine,
+            metadata=metadata,
         )
 
+    def _write_residual(
+        self, source: Path, drums: Path, bass: Path, target: Path, fmt: Any
+    ) -> None:
+        sample_rate = self._settings.music_lab_sample_rate
+        mix, mix_sr = read_audio(source)
+        mix = resample_if_needed(ensure_stereo(mix), mix_sr, sample_rate)
+        parts = []
+        for path in (drums, bass):
+            audio, sr = read_audio(path)
+            parts.append(resample_if_needed(ensure_stereo(audio), sr, sample_rate))
+        length = min(mix.shape[1], *(part.shape[1] for part in parts))
+        residual = mix[:, :length] - parts[0][:, :length] - parts[1][:, :length]
+        residual = np.clip(residual, -1.0, 1.0).astype(np.float32)
+        write_audio(target, residual, sample_rate, fmt)
+
     async def capabilities(self) -> set[str]:
-        return set(self.supported_methods)
+        methods = set(self.supported_methods)
+        if self._supports_stems():
+            methods.add("stems")
+        return methods
 
     async def close(self) -> None:
         handler = self._dit_handler

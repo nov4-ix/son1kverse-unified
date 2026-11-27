@@ -28,6 +28,7 @@ const state = vi.hoisted(() => {
       modes: ['simulation', 'ace-step', 'auto'],
       engines: ['simulation', 'ace-step'] as Array<'simulation' | 'ace-step'>,
       methods: ['cover', 'generate', 'repaint', 'stems'],
+      active_methods: undefined as string[] | undefined,
       output_formats: ['wav', 'mp3'] as Array<'wav' | 'mp3'>,
       max_concurrency: 1,
     },
@@ -303,6 +304,25 @@ describe('GET /api/v1/music/generations', () => {
       expect(simRes.json().data.supports_stems).toBe(true)
       expect(simRes.json().data.active_methods).toContain('stems')
     } finally {
+      await app.close()
+    }
+  })
+
+  it('usa active_methods de Music Lab: ace-step con checkpoint base soporta stems', async () => {
+    const app = await buildServer()
+    try {
+      state.capabilities.active_engine = 'ace-step'
+      state.capabilities.active_methods = ['cover', 'generate', 'repaint', 'stems']
+      const baseRes = await app.inject({ method: 'GET', url: '/api/v1/music/capabilities' })
+      expect(baseRes.json().data.supports_stems).toBe(true)
+      expect(baseRes.json().data.active_methods).toContain('stems')
+
+      state.capabilities.active_methods = ['cover', 'generate', 'repaint']
+      const turboRes = await app.inject({ method: 'GET', url: '/api/v1/music/capabilities' })
+      expect(turboRes.json().data.supports_stems).toBe(false)
+      expect(turboRes.json().data.active_methods).not.toContain('stems')
+    } finally {
+      state.capabilities.active_methods = undefined
       await app.close()
     }
   })

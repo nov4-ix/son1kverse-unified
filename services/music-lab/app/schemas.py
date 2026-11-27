@@ -131,6 +131,7 @@ class Capabilities(BaseModel):
     modes: list[str]
     engines: list[EngineName]
     methods: list[str]
+    active_methods: list[str] = Field(default_factory=list)
     output_formats: list[OutputFormat]
     max_concurrency: int
 

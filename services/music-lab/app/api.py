@@ -138,12 +138,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         methods: set[str] = set()
         for engine in registry.engines():
             methods.update(await registry.get(engine).capabilities())
+        active_methods: set[str] = set()
         try:
             selection = await registry.select()
         except MusicLabError:
             active = None
         else:
             active = selection.mode
+            active_methods = await selection.adapter.capabilities()
         return Capabilities(
             service=resolved.service_name,
             default_mode=resolved.music_lab_mode,
@@ -151,6 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             modes=registry.modes(),
             engines=registry.engines(),
             methods=sorted(methods),
+            active_methods=sorted(active_methods),
             output_formats=[OutputFormat.WAV, OutputFormat.MP3],
             max_concurrency=resolved.music_lab_max_concurrency,
         )

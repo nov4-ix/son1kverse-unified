@@ -59,9 +59,26 @@ QUALITY_PRESETS: dict[str, QualityPreset] = {
         inference_steps=50,
         guidance_scale=8.0,
     ),
+    # Checkpoint base: unico que soporta extract/lego/complete (stems).
+    "base": QualityPreset(
+        name="base",
+        config_path="acestep-v15-base",
+        inference_steps=50,
+        guidance_scale=7.0,
+    ),
 }
 
 DEFAULT_QUALITY_PRESET = "turbo"
+
+
+def config_supports_stems(config_path: str) -> bool:
+    """``extract``/``lego`` solo existen en los checkpoints base de ACE-Step.
+
+    Upstream (``TASK_TYPES_TURBO`` vs ``TASK_TYPES_BASE``) limita turbo y SFT a
+    text2music/repaint/cover; separar o componer pistas exige un modelo base.
+    """
+    name = config_path.strip().lower()
+    return "base" in name and "turbo" not in name and "sft" not in name
 
 
 def get_quality_preset(name: str) -> QualityPreset:
