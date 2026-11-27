@@ -9,6 +9,7 @@ import { config } from '../config/index.js'
 import { errorResponse } from '../core/contracts.js'
 import { musicLabClient } from '../clients/musicLab.js'
 import { prisma } from '../storage/client.js'
+import { isSessionActive } from '../services/AuthTokenService.js'
 import { errorHandlerPlugin } from './plugins/error-handler.js'
 import { authRoutes } from './routes/auth.js'
 import { orchestrateRoutes } from './routes/orchestrate.js'
@@ -20,6 +21,9 @@ import { sessionRoutes } from './routes/sessions.js'
 const PUBLIC_API_PATHS = new Set([
   '/api/v1/auth/register',
   '/api/v1/auth/login',
+  '/api/v1/auth/verify-email',
+  '/api/v1/auth/password/forgot',
+  '/api/v1/auth/password/reset',
   '/api/v1/music/health',
   '/api/v1/music/capabilities',
 ])
@@ -155,6 +159,20 @@ export async function buildServer() {
           'UNAUTHORIZED',
           'Bearer JWT requerido. Inicia sesión en POST /api/v1/auth/login.',
         ),
+      )
+    }
+
+    const claims = request.user as Record<string, unknown>
+    const jti = claims['jti']
+    if (typeof jti === 'string' && jti !== '') {
+      if (!(await isSessionActive(jti))) {
+        return reply.status(401).send(
+          errorResponse('SESSION_REVOKED', 'La sesión fue revocada. Inicia sesión de nuevo.'),
+        )
+      }
+    } else if (config.REQUIRE_SESSION_CLAIM) {
+      return reply.status(401).send(
+        errorResponse('SESSION_REQUIRED', 'El token no tiene una sesión revocable. Inicia sesión de nuevo.'),
       )
     }
   })

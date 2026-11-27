@@ -12,12 +12,17 @@ beforeAll(async () => {
 const JWT_SECRET = 'test-secret-0123456789-0123456789-abcdef'
 
 describe('ConfigSchema — secretos de producción', () => {
-  it('acepta producción con DATABASE_URL y MUSIC_LAB_API_KEY explícitas', () => {
+  it('acepta producción con todos los secretos y requisitos explícitos', () => {
     const result = ConfigSchema.safeParse({
       NODE_ENV: 'production',
       JWT_SECRET,
       DATABASE_URL: 'postgresql://user:pass@db:5432/son1kverse',
       MUSIC_LAB_API_KEY: 'music-lab-secret',
+      REQUIRE_EMAIL_VERIFICATION: true,
+      REQUIRE_SESSION_CLAIM: true,
+      EMAIL_PROVIDER: 'resend',
+      EMAIL_API_KEY: 're_test_secret',
+      APP_BASE_URL: 'https://son1kvers3.com',
     })
     expect(result.success).toBe(true)
   })

@@ -109,6 +109,33 @@ export class ForbiddenError extends Son1kverseError {
   }
 }
 
+export class EmailNotVerifiedError extends Son1kverseError {
+  constructor() {
+    super(
+      'Verifica tu correo antes de generar. Revisa tu bandeja o pide un enlace nuevo.',
+      'EMAIL_NOT_VERIFIED',
+      403,
+    )
+  }
+}
+
+export class AccountDisabledError extends Son1kverseError {
+  constructor() {
+    super('Esta cuenta está desactivada', 'ACCOUNT_DISABLED', 403)
+  }
+}
+
+export class TooManyActiveGenerationsError extends Son1kverseError {
+  constructor(max: number) {
+    super(
+      `Ya tienes ${max} generaciones activas. Espera a que termine una antes de encolar otra.`,
+      'TOO_MANY_ACTIVE_GENERATIONS',
+      429,
+      { max },
+    )
+  }
+}
+
 export class NotFoundError extends Son1kverseError {
   constructor(message = 'Recurso no encontrado') {
     super(message, 'NOT_FOUND', 404)

@@ -169,6 +169,19 @@ export const LoginSchema = z.object({
 
 export type LoginDTO = z.infer<typeof LoginSchema>
 
+export const VerifyEmailSchema = z.object({
+  token: z.string().min(20).max(200),
+})
+
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email(),
+})
+
+export const ResetPasswordSchema = z.object({
+  token:    z.string().min(20).max(200),
+  password: z.string().min(12, 'Mínimo 12 caracteres'),
+})
+
 // ─── API Response Helpers ─────────────────────────────────────────────────────
 
 export type ApiResponse<T> = {

@@ -12,3 +12,11 @@ export function getAuthUserId(request: FastifyRequest): string {
   if (typeof sub !== 'string' || sub === '') throw new UnauthorizedError()
   return sub
 }
+
+export function getAuthSessionId(request: FastifyRequest): string | null {
+  const claims = request.user
+  if (typeof claims !== 'object' || claims === null) return null
+
+  const jti = (claims as Record<string, unknown>)['jti']
+  return typeof jti === 'string' && jti !== '' ? jti : null
+}

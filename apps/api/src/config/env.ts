@@ -42,6 +42,18 @@ export const ConfigSchema = z.object({
     }),
   JWT_EXPIRES_IN: z.string().default('7d'),
 
+  // Verificación de correo y reset de contraseña.
+  REQUIRE_EMAIL_VERIFICATION: BooleanFromString.default(true),
+  // En producción se exige un jti revocable en cada JWT.
+  REQUIRE_SESSION_CLAIM: BooleanFromString.default(false),
+  APP_BASE_URL: z.string().url().default('http://localhost:5173'),
+  EMAIL_PROVIDER: z.enum(['console', 'resend']).default('console'),
+  EMAIL_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('SON1KVERSE <no-reply@son1kverse.local>'),
+  EMAIL_VERIFICATION_TTL_MINUTES: z.coerce.number().int().min(5).max(1_440).default(60),
+  PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(15),
+  MAX_ACTIVE_GENERATIONS_PER_USER: z.coerce.number().int().min(1).max(2).default(2),
+
   OPENAI_API_KEY:      z.string().optional(),
   OPENROUTER_API_KEY:  z.string().optional(),
   OLLAMA_BASE_URL:     z.string().url().default('http://localhost:11434'),
@@ -83,6 +95,41 @@ export const ConfigSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['MUSIC_LAB_API_KEY'],
       message: 'MUSIC_LAB_API_KEY es obligatoria cuando NODE_ENV=production',
+    })
+  }
+  if (!data.REQUIRE_EMAIL_VERIFICATION) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['REQUIRE_EMAIL_VERIFICATION'],
+      message: 'La verificación de correo es obligatoria cuando NODE_ENV=production',
+    })
+  }
+  if (!data.REQUIRE_SESSION_CLAIM) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['REQUIRE_SESSION_CLAIM'],
+      message: 'Las sesiones revocables son obligatorias cuando NODE_ENV=production',
+    })
+  }
+  if (data.EMAIL_PROVIDER !== 'resend') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EMAIL_PROVIDER'],
+      message: 'EMAIL_PROVIDER debe ser "resend" cuando NODE_ENV=production',
+    })
+  }
+  if ((data.EMAIL_API_KEY ?? '').trim() === '') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EMAIL_API_KEY'],
+      message: 'EMAIL_API_KEY es obligatoria cuando NODE_ENV=production',
+    })
+  }
+  if (!data.APP_BASE_URL.startsWith('https://')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['APP_BASE_URL'],
+      message: 'APP_BASE_URL debe usar https cuando NODE_ENV=production',
     })
   }
 }).transform((data) => ({

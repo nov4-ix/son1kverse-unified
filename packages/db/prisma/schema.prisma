@@ -45,6 +45,7 @@ model User {
   projects      Project[]
   generations   Generation[]
   refreshTokens RefreshToken[]
+  authTokens    AuthToken[]
   alvaeAccount  AlvaeAccount?
 
   createdAt DateTime @default(now())
@@ -121,6 +122,27 @@ model RefreshToken {
 
   @@index([userId])
   @@index([token])
+}
+
+// Tokens de un solo uso para verificación de correo y reset de contraseña.
+// Solo se guarda el SHA-256 del token; el valor crudo viaja en el email.
+model AuthToken {
+  id        String        @id @default(cuid())
+  tokenHash String        @unique
+  type      AuthTokenType
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+
+  @@index([userId, type])
+  @@index([expiresAt])
+}
+
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
 }
 
 // ─── Artist Profile — El alma del sistema ─────────────────────────────────────
