@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
   release: vi.fn(),
 }))
 
-vi.mock('../../src/clients/musicLab.js', () => ({ musicLabClient: { getAudio: mocks.getAudio } }))
+vi.mock('../../src/clients/musicLab.js', () => ({
+  musicLabClient: { getAudio: mocks.getAudio },
+  getMusicLabClient: () => ({ getAudio: mocks.getAudio }),
+}))
 vi.mock('../../src/lib/logger.js', () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }))
