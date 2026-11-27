@@ -7,6 +7,8 @@ import fjwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
 import { config } from '../config/index.js'
 import { errorResponse } from '../core/contracts.js'
+import { musicLabClient } from '../clients/musicLab.js'
+import { prisma } from '../storage/client.js'
 import { errorHandlerPlugin } from './plugins/error-handler.js'
 import { authRoutes } from './routes/auth.js'
 import { orchestrateRoutes } from './routes/orchestrate.js'
@@ -27,6 +29,71 @@ function corsOrigins(): string[] {
     .split(',')
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0)
+}
+
+type DependencyCheck = {
+  status: 'ok' | 'error'
+  latencyMs: number
+  error?: string
+}
+
+const DEPENDENCY_TIMEOUT_MS = 2_000
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Timeout después de ${timeoutMs} ms`)), timeoutMs)
+        timer.unref?.()
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+async function checkPostgres(): Promise<DependencyCheck> {
+  const started = Date.now()
+  try {
+    await withTimeout(prisma.$queryRaw`SELECT 1`, DEPENDENCY_TIMEOUT_MS)
+    return { status: 'ok', latencyMs: Date.now() - started }
+  } catch (error) {
+    return {
+      status: 'error',
+      latencyMs: Date.now() - started,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+async function checkMusicLab(): Promise<DependencyCheck> {
+  const started = Date.now()
+  try {
+    const health = await withTimeout(musicLabClient.health(), DEPENDENCY_TIMEOUT_MS)
+    if (health.status !== 'ok') {
+      throw new Error(`Music Lab respondió con estado ${health.status}`)
+    }
+    return { status: 'ok', latencyMs: Date.now() - started }
+  } catch (error) {
+    return {
+      status: 'error',
+      latencyMs: Date.now() - started,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+async function dependencySnapshot(): Promise<{
+  ok: boolean
+  checks: { postgres: DependencyCheck; musicLab: DependencyCheck }
+}> {
+  const [postgres, musicLab] = await Promise.all([checkPostgres(), checkMusicLab()])
+  return {
+    ok: postgres.status === 'ok' && musicLab.status === 'ok',
+    checks: { postgres, musicLab },
+  }
 }
 
 export async function buildServer() {
@@ -92,13 +159,30 @@ export async function buildServer() {
     }
   })
 
-  // ─── Health check ────────────────────────────────────────────────────────────
-  app.get('/health', async () => ({
-    status:  'ok',
-    version: config.SYSTEM_VERSION,
-    pixel:   'online',
-    ts:      new Date().toISOString(),
-  }))
+  // ─── Health / readiness ──────────────────────────────────────────────────────
+  // /health y /ready comprueban dependencias reales. Si Postgres o Music Lab
+  // fallan, responden 503 para que el orquestador no envíe tráfico.
+  app.get('/health', async (_request, reply) => {
+    const snapshot = await dependencySnapshot()
+    return reply.status(snapshot.ok ? 200 : 503).send({
+      status: snapshot.ok ? 'ok' : 'degraded',
+      version: config.SYSTEM_VERSION,
+      pixel: snapshot.ok ? 'online' : 'degraded',
+      ts: new Date().toISOString(),
+      checks: snapshot.checks,
+    })
+  })
+
+  app.get('/ready', async (_request, reply) => {
+    const snapshot = await dependencySnapshot()
+    return reply.status(snapshot.ok ? 200 : 503).send({
+      ready: snapshot.ok,
+      status: snapshot.ok ? 'ready' : 'not_ready',
+      version: config.SYSTEM_VERSION,
+      ts: new Date().toISOString(),
+      checks: snapshot.checks,
+    })
+  })
 
   // ─── API Routes ──────────────────────────────────────────────────────────────
   await app.register(authRoutes,        { prefix: '/api/v1' })
