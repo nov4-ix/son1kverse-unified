@@ -338,7 +338,7 @@ def test_ace_step_metadata_includes_reproducibility_fields(tmp_path: Path) -> No
         GenerationConfig=lambda **kwargs: SimpleNamespace(**kwargs),
         generate_music=generate_music,
     )
-    adapter = AceStepAdapter(_settings(tmp_path))
+    adapter = AceStepAdapter(_settings(tmp_path, ace_step_device="cpu"))
     adapter._inference = inference
     adapter._dit_handler = object()
     adapter._effective_dtype = "bfloat16"
